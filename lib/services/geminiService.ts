@@ -4,17 +4,15 @@ import { MetricServiceClient } from '@google-cloud/monitoring';
 import { estimateCost, GEMINI_PRICING, getPrice } from '@/lib/pricing';
 import type { DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
 import { emptyUsage, monthRange } from './shared';
+import { aggregateGeminiTrackedUsage, getGeminiApiKeys } from './geminiUsageStore';
 
 export async function fetchGeminiUsage(): Promise<ServiceUsage> {
   const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   const projectId = process.env.GOOGLE_PROJECT_ID;
+  const apiKeys = getGeminiApiKeys();
 
-  if (!credentials && process.env.GEMINI_API_KEY) {
-    return emptyUsage(
-      'gemini',
-      'NO_USAGE_API',
-      'Gemini 사용량 조회는 Google Cloud Monitoring 설정이 필요합니다.'
-    );
+  if (!credentials && apiKeys.size > 0) {
+    return aggregateGeminiTrackedUsage();
   }
 
   if (!credentials || !projectId) {

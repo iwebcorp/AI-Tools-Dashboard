@@ -20,7 +20,9 @@ corepack pnpm dev
   - 조직 Usage/Costs API 접근 권한이 있는 Admin key가 필요합니다.
 - Gemini: `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_PROJECT_ID`
   - Google Cloud Monitoring API와 서비스 계정이 필요합니다.
-  - `GEMINI_API_KEY`만 있으면 사용량 조회는 `NO_USAGE_API`로 표시됩니다.
+  - Vertex 없이 앞으로의 사용량을 추적하려면 `GEMINI_API_KEY` 또는 `GEMINI_API_KEYS`를 넣고 `POST /api/proxy/gemini`를 통해 Gemini를 호출합니다.
+  - `GEMINI_API_KEYS` 형식: `projectA:AIza...,projectB:AIza...`
+  - proxy를 거치지 않은 과거/외부 호출은 추적할 수 없습니다.
 - Cursor: `CURSOR_SESSION_TOKEN` 또는 `CURSOR_SESSION_TOKENS`
   - `cursor.com/settings` 로그인 후 브라우저 쿠키의 `WorkosCursorSessionToken` 값을 사용합니다.
   - 여러 계정은 쉼표로 구분합니다.
@@ -42,6 +44,22 @@ corepack pnpm dev
 | `NO_USAGE_API` | 해당 키/계정으로 usage API 불가 | Cloud/Admin API 설정 |
 | `PLAN_REQUIRED` | 요금제 필요 | Enterprise/Admin 플랜 확인 |
 | `UNKNOWN` | 기타 오류 | 서버 로그 확인 |
+
+## Gemini Proxy
+
+Vertex AI를 쓰지 않는 Gemini API key 방식은 전체 사용량 조회 API가 없습니다. 대신 앞으로의 호출을 이 앱의 proxy로 통과시키면 응답의 `usageMetadata`를 `data/gemini-usage.jsonl`에 저장하고 대시보드에서 집계합니다.
+
+```bash
+curl -X POST http://localhost:3001/api/proxy/gemini \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project": "projectA",
+    "model": "gemini-2.0-flash",
+    "contents": [
+      { "parts": [{ "text": "안녕하세요" }] }
+    ]
+  }'
+```
 
 ## 검증
 

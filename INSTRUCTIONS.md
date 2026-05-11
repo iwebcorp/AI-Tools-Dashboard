@@ -82,6 +82,9 @@ GOOGLE_APPLICATION_CREDENTIALS=./credentials/google-sa.json
 GOOGLE_PROJECT_ID=your-gcp-project-id
 # 또는 AI Studio 키만 있는 경우
 GEMINI_API_KEY=AIza...
+# Vertex 없이 앞으로의 Gemini 사용량을 추적하려면 proxy를 사용한다.
+# 단일 키는 project=default, 여러 프로젝트는 label:key 형식으로 쉼표 구분.
+GEMINI_API_KEYS=projectA:AIza...,projectB:AIza...
 
 # Cursor (WorkOS 세션 토큰)
 # 단일 계정: CURSOR_SESSION_TOKEN
@@ -139,7 +142,13 @@ FIGMA_TEAM_ID=123456789
 - **Route**: `GET /api/usage/gemini`
 - **방법 A** (권장): `@google-cloud/monitoring` 패키지
   - 메트릭: `aiplatform.googleapis.com/publisher/online_serving/token_count`
-- **방법 B** (AI Studio 키만): `connected: false`, `error: 'NO_USAGE_API'` 반환
+- **방법 B** (AI Studio 키 + proxy tracking):
+  - `GEMINI_API_KEY` 또는 `GEMINI_API_KEYS` 설정
+  - `POST /api/proxy/gemini`를 통해 Gemini 호출
+  - 응답의 `usageMetadata`를 `data/gemini-usage.jsonl`에 저장
+  - `/api/usage/gemini`는 저장된 로그를 월별/모델별/일별로 집계
+  - proxy를 거치지 않은 과거/외부 호출은 추적 불가
+- **방법 C** (AI Studio 키만 있고 proxy 기록 없음): `connected: true`, 토큰 0, 안내 메시지 표시
 
 ### 3. Cursor
 

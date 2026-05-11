@@ -154,7 +154,13 @@ Agent 2 완료
 - [ ] **방법 A**: `@google-cloud/monitoring` 사용
   - 메트릭: `aiplatform.googleapis.com/publisher/online_serving/token_count`
   - 모델별 집계, `dailyHistory` 생성
-- [ ] **방법 B**: `connected: false`, `error: 'NO_USAGE_API'`, `errorMessage: 'Gemini 사용량 조회는 Google Cloud Monitoring 설정이 필요합니다'`
+- [ ] **방법 B**: AI Studio API key proxy tracking
+  - `GEMINI_API_KEY` 또는 `GEMINI_API_KEYS=projectA:key,projectB:key` 지원
+  - `POST /api/proxy/gemini` 구현
+  - Gemini 응답의 `usageMetadata`를 `data/gemini-usage.jsonl`에 JSONL로 저장
+  - `/api/usage/gemini`는 저장 로그를 월별/모델별/일별로 집계
+  - proxy를 거치지 않은 과거/외부 호출은 추적 불가 안내
+- [ ] **방법 C**: Gemini key도 tracking 로그도 없으면 `connected: false`, `error: 'NOT_CONFIGURED'`
 
 ---
 
