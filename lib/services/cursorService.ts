@@ -4,6 +4,8 @@ import { z } from 'zod';
 import type { DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
 import { emptyUsage, todayKey } from './shared';
 
+const CURSOR_FETCH_TIMEOUT_MS = 12_000;
+
 const CursorSchema = z.object({
   tokenUsage: z
     .object({
@@ -90,6 +92,7 @@ async function detectBillingProfile(sessionToken: string): Promise<void> {
         'User-Agent': 'Mozilla/5.0',
       },
       cache: 'no-store',
+      signal: AbortSignal.timeout(CURSOR_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) return;
     BillingProfileSchema.safeParse(await response.json());
@@ -130,6 +133,7 @@ export async function fetchCursorUsage(): Promise<ServiceUsage> {
           'User-Agent': 'Mozilla/5.0',
         },
         cache: 'no-store',
+        signal: AbortSignal.timeout(CURSOR_FETCH_TIMEOUT_MS),
       });
 
       if (response.status === 401 || response.status === 403) {
