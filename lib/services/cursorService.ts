@@ -44,7 +44,23 @@ const CursorSchema = z.object({
       })
     )
     .optional(),
-});
+}).passthrough();
+
+const LegacyUsageItemSchema = z
+  .object({
+    numRequests: z.number().optional(),
+    numRequestsTotal: z.number().optional(),
+    numTokens: z.number().optional(),
+    maxTokenUsage: z.number().nullable().optional(),
+    maxRequestUsage: z.number().nullable().optional(),
+  })
+  .passthrough();
+
+const LegacyCursorSchema = z
+  .object({
+    startOfMonth: z.string().optional(),
+  })
+  .passthrough();
 
 const BillingProfileSchema = z
   .object({
@@ -111,8 +127,9 @@ function addModelUsage(
 
 async function detectBillingProfile(sessionToken: string): Promise<void> {
   try {
-    const response = await fetch('https://api2.cursor.sh/auth/full_stripe_profile', {
+    const response = await fetch('https://cursor.com/api/auth/stripe', {
       headers: {
+        Accept: 'application/json',
         Cookie: `WorkosCursorSessionToken=${sessionToken}`,
         'User-Agent': 'Mozilla/5.0',
       },
@@ -124,6 +141,19 @@ async function detectBillingProfile(sessionToken: string): Promise<void> {
   } catch {
     // Billing profile detection is only advisory; usage fetching remains authoritative.
   }
+}
+
+function getLegacyUsageItems(raw: unknown): Array<[string, z.infer<typeof LegacyUsageItemSchema>]> {
+  const parsed = LegacyCursorSchema.safeParse(raw);
+  if (!parsed.success) return [];
+
+  const items: Array<[string, z.infer<typeof LegacyUsageItemSchema>]> = [];
+  for (const [key, value] of Object.entries(parsed.data)) {
+    if (key === 'startOfMonth') continue;
+    const item = LegacyUsageItemSchema.safeParse(value);
+    if (item.success) items.push([key, item.data]);
+  }
+  return items;
 }
 
 export async function fetchCursorUsage(): Promise<ServiceUsage> {
@@ -152,7 +182,7 @@ export async function fetchCursorUsage(): Promise<ServiceUsage> {
     for (const session of sessions) {
       await detectBillingProfile(session.token);
 
-      const response = await fetch(`https://www.cursor.com/api/usage?user=${encodeURIComponent(session.userId)}`, {
+      const response = await fetch(`https://cursor.com/api/usage?user=${encodeURIComponent(session.userId)}`, {
         headers: {
           Accept: 'application/json',
           Cookie: `WorkosCursorSessionToken=${session.token}`,
@@ -182,6 +212,7 @@ export async function fetchCursorUsage(): Promise<ServiceUsage> {
 
       const usage = parsed.data;
       const currentUsage = usage.usageBasedPricing?.currentUsage;
+      const legacyUsageItems = getLegacyUsageItems(raw);
       let accountInput = usage.tokenUsage?.inputTokens ?? 0;
       let accountOutput = usage.tokenUsage?.outputTokens ?? 0;
       let accountTotal = usage.tokenUsage?.totalTokens ?? accountInput + accountOutput;
@@ -195,6 +226,16 @@ export async function fetchCursorUsage(): Promise<ServiceUsage> {
         const cost = (item.totalCents ?? 0) / 100;
         addModelUsage(modelMap, model, inputTokens, outputTokens, requests, cost);
         accountRequests += requests;
+      }
+
+      if (!currentUsage && legacyUsageItems.length > 0) {
+        for (const [model, item] of legacyUsageItems) {
+          const requests = item.numRequests ?? item.numRequestsTotal ?? 0;
+          const totalTokens = item.numTokens ?? 0;
+          addModelUsage(modelMap, model, totalTokens, 0, requests, 0);
+          accountRequests += requests;
+          accountTotal += totalTokens;
+        }
       }
 
       if (accountTotal === 0 && currentUsage) {
