@@ -165,8 +165,42 @@ function ServiceDetail({ usage }: { usage: ServiceUsage; allData: AllUsageRespon
 
       {usage.errorMessage ? <div className="rounded-lg bg-white p-4 text-sm text-slate-600">{usage.errorMessage}</div> : null}
 
+      {isCursor && usage.accounts?.length ? <CursorAccounts accounts={usage.accounts} /> : null}
+
       <ModelBreakdown models={usage.models} serviceId={usage.service} />
       <DailyChart service={usage} />
+    </div>
+  );
+}
+
+function CursorAccounts({ accounts }: { accounts: NonNullable<ServiceUsage['accounts']> }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-4 py-3">
+        <h2 className="text-sm font-semibold text-slate-950">Cursor accounts</h2>
+      </div>
+      <table className="w-full text-left text-sm">
+        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-4 py-3">Account</th>
+            <th className="px-4 py-3 text-right">Today cost</th>
+            <th className="px-4 py-3 text-right">Month cost</th>
+            <th className="px-4 py-3 text-right">Total tokens</th>
+            <th className="px-4 py-3 text-right">Requests</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {accounts.map((account) => (
+            <tr key={account.label}>
+              <td className="px-4 py-3 font-medium text-slate-900">{account.label}</td>
+              <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(account.cost.today)}</td>
+              <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(account.cost.thisMonth)}</td>
+              <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.tokens.total)}</td>
+              <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.requests)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

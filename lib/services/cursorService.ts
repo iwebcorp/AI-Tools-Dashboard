@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { z } from 'zod';
-import type { DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
+import type { AccountUsage, DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
 import { emptyUsage, todayKey } from './shared';
 
 const CURSOR_FETCH_TIMEOUT_MS = 12_000;
@@ -133,6 +133,18 @@ const FilteredUsageSchema = z
   })
   .passthrough();
 
+const DashboardMeSchema = z
+  .object({
+    email: z.string().optional(),
+    user: z
+      .object({
+        email: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
 interface CursorSession {
   token: string;
   userId: string;
@@ -144,6 +156,14 @@ function getCookieStringsFromEnv(): string[] {
       .map((cookie) => cookie.trim().replace(/^Cookie:\s*/i, ''))
       .filter(Boolean) ?? []
   );
+}
+
+function getCursorAccountLabels(count: number): string[] {
+  const configured =
+    process.env.CURSOR_ACCOUNT_LABELS?.split(',')
+      .map((label) => label.trim())
+      .filter(Boolean) ?? [];
+  return Array.from({ length: count }, (_, index) => configured[index] ?? `회사 ${index + 1}`);
 }
 
 function getSessionsFromEnv(): CursorSession[] {
@@ -234,6 +254,17 @@ async function postCursorDashboard(cookie: string, path: string, body: object): 
   return response.json();
 }
 
+async function fetchDashboardEmail(cookie: string): Promise<string | null> {
+  try {
+    const raw = await postCursorDashboard(cookie, '/api/dashboard/get-me', {});
+    const parsed = DashboardMeSchema.safeParse(raw);
+    if (!parsed.success) return null;
+    return parsed.data.email ?? parsed.data.user?.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchDashboardCookieUsage(cookieStrings: string[]): Promise<ServiceUsage> {
   const totals: ServiceUsage = {
     service: 'cursor',
@@ -246,8 +277,23 @@ async function fetchDashboardCookieUsage(cookieStrings: string[]): Promise<Servi
   };
   const modelMap = new Map<string, ModelUsage>();
   const dailyMap = new Map<string, DailyUsage>();
+  const accountLabels = getCursorAccountLabels(cookieStrings.length);
+  const accounts: AccountUsage[] = [];
 
-  for (const cookie of cookieStrings) {
+  for (const [index, cookie] of cookieStrings.entries()) {
+    const email = await fetchDashboardEmail(cookie);
+    const label = email ? `${accountLabels[index]} (${email})` : accountLabels[index];
+    const account: AccountUsage = {
+      label,
+      cost: { today: 0, thisMonth: 0 },
+      tokens: { input: 0, output: 0, total: 0 },
+      requests: 0,
+      models: [],
+      dailyHistory: [],
+    };
+    const accountModelMap = new Map<string, ModelUsage>();
+    const accountDailyMap = new Map<string, DailyUsage>();
+
     const currentRaw = await postCursorDashboard(cookie, '/api/dashboard/get-current-period-usage', {});
     const current = CurrentPeriodUsageSchema.safeParse(currentRaw);
     if (!current.success) {
@@ -292,12 +338,20 @@ async function fetchDashboardCookieUsage(cookieStrings: string[]): Promise<Servi
     totals.tokens.total += accountInput + accountOutput;
     totals.cost.thisMonth += accountCost;
     totals.requests += filtered.data.totalUsageEventsCount ?? 0;
+    account.tokens.input += accountInput;
+    account.tokens.output += accountOutput;
+    account.tokens.total += accountInput + accountOutput;
+    account.cost.thisMonth += accountCost;
+    account.requests += filtered.data.totalUsageEventsCount ?? 0;
 
     for (const item of aggregateData.aggregations ?? []) {
       const inputTokens =
         numberValue(item.inputTokens) + numberValue(item.cacheWriteTokens) + numberValue(item.cacheReadTokens);
       const outputTokens = numberValue(item.outputTokens);
-      addModelUsage(modelMap, dashboardModelName(item), inputTokens, outputTokens, 0, numberValue(item.totalCents) / 100);
+      const model = dashboardModelName(item);
+      const cost = numberValue(item.totalCents) / 100;
+      addModelUsage(modelMap, model, inputTokens, outputTokens, 0, cost);
+      addModelUsage(accountModelMap, model, inputTokens, outputTokens, 0, cost);
     }
 
     for (const event of filtered.data.usageEventsDisplay ?? []) {
@@ -323,12 +377,31 @@ async function fetchDashboardCookieUsage(cookieStrings: string[]): Promise<Servi
       currentDaily.requests += 1;
       currentDaily.cost += cost;
       dailyMap.set(date, currentDaily);
+
+      const accountCurrentDaily = accountDailyMap.get(date) ?? {
+        date,
+        inputTokens: 0,
+        outputTokens: 0,
+        requests: 0,
+        cost: 0,
+      };
+      accountCurrentDaily.inputTokens += inputTokens;
+      accountCurrentDaily.outputTokens += outputTokens;
+      accountCurrentDaily.requests += 1;
+      accountCurrentDaily.cost += cost;
+      accountDailyMap.set(date, accountCurrentDaily);
     }
+
+    account.models = [...accountModelMap.values()].sort((a, b) => b.cost - a.cost);
+    account.dailyHistory = [...accountDailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+    account.cost.today = account.dailyHistory.find((entry) => entry.date === todayKey())?.cost ?? 0;
+    accounts.push(account);
   }
 
   totals.models = [...modelMap.values()].sort((a, b) => b.cost - a.cost);
   totals.dailyHistory = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
   totals.cost.today = totals.dailyHistory.find((entry) => entry.date === todayKey())?.cost ?? 0;
+  totals.accounts = accounts;
   return totals;
 }
 

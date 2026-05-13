@@ -28,6 +28,23 @@ export interface ServiceUsage {
   requests: number;
   models: ModelUsage[];
   dailyHistory: DailyUsage[];
+  accounts?: AccountUsage[];
+}
+
+export interface AccountUsage {
+  label: string;
+  cost: {
+    today: number;
+    thisMonth: number;
+  };
+  tokens: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  requests: number;
+  models: ModelUsage[];
+  dailyHistory: DailyUsage[];
 }
 
 export interface ModelUsage {
