@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
+import type { AccountUsage, AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
 import { useUsageData } from '@/hooks/useUsageData';
 import { CostChart } from './CostChart';
 import { DailyChart } from './DailyChart';
@@ -28,9 +28,32 @@ const colors: Record<ServiceId, string> = {
 
 type Tab = 'overview' | ServiceId;
 
+interface CursorRange {
+  start: string;
+  end: string;
+}
+
+function dateInputValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function initialCursorRange(): CursorRange {
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  return {
+    start: dateInputValue(monthStart),
+    end: dateInputValue(today),
+  };
+}
+
 export function Dashboard() {
-  const { data, loading, refreshing, error, lastUpdated, refresh } = useUsageData();
   const [tab, setTab] = useState<Tab>('overview');
+  const [cursorRange, setCursorRange] = useState<CursorRange>(initialCursorRange);
+  const { data, loading, refreshing, error, lastUpdated, refresh } = useUsageData({
+    cursorStart: cursorRange.start,
+    cursorEnd: cursorRange.end,
+  });
 
   if (loading && !data) {
     return (
@@ -52,17 +75,17 @@ export function Dashboard() {
       <div className="mx-auto max-w-7xl">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">AI Usage Dashboard</h1>
-            <p className="mt-1 text-sm text-slate-500">OpenAI, Gemini, Cursor, Claude, Figma usage and cost.</p>
+            <h1 className="text-2xl font-semibold tracking-tight">AI 사용량 대시보드</h1>
+            <p className="mt-1 text-sm text-slate-500">OpenAI, Gemini, Cursor, Claude, Figma 사용량 모니터링</p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-500">Updated {formatDateTime(lastUpdated)}</span>
+            <span className="text-sm text-slate-500">마지막 업데이트 {formatDateTime(lastUpdated)}</span>
             <button
               className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
               disabled={refreshing}
               onClick={() => void refresh()}
             >
-              {refreshing ? 'Refreshing' : 'Refresh'}
+              {refreshing ? '새로고침 중' : '새로고침'}
             </button>
           </div>
         </header>
@@ -78,7 +101,7 @@ export function Dashboard() {
               }`}
               onClick={() => setTab(item)}
             >
-              {item === 'overview' ? 'Overview' : serviceNames[item]}
+              {item === 'overview' ? '전체' : serviceNames[item]}
             </button>
           ))}
         </nav>
@@ -87,7 +110,11 @@ export function Dashboard() {
           tab === 'overview' ? (
             <Overview data={data} />
           ) : (
-            <ServiceDetail usage={data[tab]} allData={data} />
+            <ServiceDetail
+              usage={data[tab]}
+              cursorRange={cursorRange}
+              onCursorRangeChange={setCursorRange}
+            />
           )
         ) : null}
       </div>
@@ -104,9 +131,9 @@ function Overview({ data }: { data: AllUsageResponse }) {
   return (
     <div className="mt-6 space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
-        <Metric label="Total cost" value={formatCurrency(totalCost)} />
-        <Metric label="Tokens + API calls" value={formatNum(totalTokens)} />
-        <Metric label="Active services" value={`${active}/5`} />
+        <Metric label="이번 달 총 비용" value={formatCurrency(totalCost)} />
+        <Metric label="총 토큰/API 호출" value={formatNum(totalTokens)} />
+        <Metric label="활성 서비스" value={`${active}/5`} />
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {serviceIds.map((id) => (
@@ -115,7 +142,7 @@ function Overview({ data }: { data: AllUsageResponse }) {
             label={serviceNames[id]}
             used={data[id].tokens.total}
             color={colors[id]}
-            unit={id === 'figma' ? 'calls' : 'tokens'}
+            unit={id === 'figma' ? '호출' : '토큰'}
           />
         ))}
       </div>
@@ -132,75 +159,162 @@ function Overview({ data }: { data: AllUsageResponse }) {
   );
 }
 
-function ServiceDetail({ usage }: { usage: ServiceUsage; allData: AllUsageResponse }) {
+function ServiceDetail({
+  usage,
+  cursorRange,
+  onCursorRangeChange,
+}: {
+  usage: ServiceUsage;
+  cursorRange: CursorRange;
+  onCursorRangeChange: (range: CursorRange) => void;
+}) {
   const isFigma = usage.service === 'figma';
   const isCursor = usage.service === 'cursor';
+  const [selectedCursorAccountIndex, setSelectedCursorAccountIndex] = useState<number | null>(null);
+  const selectedCursorAccount =
+    isCursor && selectedCursorAccountIndex !== null ? usage.accounts?.[selectedCursorAccountIndex] : undefined;
 
   return (
     <div className="mt-6 space-y-6">
+      {isCursor ? <CursorRangeControls range={cursorRange} onChange={onCursorRangeChange} /> : null}
+
       <div className="grid gap-4 md:grid-cols-4">
         {isCursor ? (
           <>
-            <Metric label="Today cost" value={formatCurrency(usage.cost.today)} />
-            <Metric label="Month cost" value={formatCurrency(usage.cost.thisMonth)} />
-            <Metric label="Total tokens" value={formatNum(usage.tokens.total)} />
-            <Metric label="Requests" value={formatNum(usage.requests)} />
+            <Metric label="오늘 사용액" value={formatCurrency(usage.cost.today)} />
+            <Metric label="선택 기간 사용액" value={formatCurrency(usage.cost.thisMonth)} />
+            <Metric label="선택 기간 총 토큰" value={formatNum(usage.tokens.total)} />
+            <Metric label="선택 기간 요청 수" value={formatNum(usage.requests)} />
           </>
         ) : isFigma ? (
           <>
-            <Metric label="API 호출 수" value={formatNum(usage.tokens.total)} />
-            <Metric label="Code generation" value={formatNum(usage.models.find((item) => item.model === 'code_generation')?.requests ?? 0)} />
-            <Metric label="Month cost" value={formatCurrency(usage.cost.thisMonth)} />
-            <Metric label="Events" value={formatNum(usage.requests)} />
+            <Metric label="이번 달 API 호출 수" value={formatNum(usage.tokens.total)} />
+            <Metric label="코드 생성 호출 수" value={formatNum(usage.models.find((item) => item.model === 'code_generation')?.requests ?? 0)} />
+            <Metric label="이번 달 비용" value={formatCurrency(usage.cost.thisMonth)} />
+            <Metric label="요청 수" value={formatNum(usage.requests)} />
           </>
         ) : (
           <>
-            <Metric label="Input tokens" value={formatNum(usage.tokens.input)} />
-            <Metric label="Output tokens" value={formatNum(usage.tokens.output)} />
-            <Metric label="Month cost" value={formatCurrency(usage.cost.thisMonth)} />
-            <Metric label="Requests" value={formatNum(usage.requests)} />
+            <Metric label="이번 달 입력 토큰" value={formatNum(usage.tokens.input)} />
+            <Metric label="이번 달 출력 토큰" value={formatNum(usage.tokens.output)} />
+            <Metric label="이번 달 비용" value={formatCurrency(usage.cost.thisMonth)} />
+            <Metric label="이번 달 요청 수" value={formatNum(usage.requests)} />
           </>
         )}
       </div>
 
       {usage.errorMessage ? <div className="rounded-lg bg-white p-4 text-sm text-slate-600">{usage.errorMessage}</div> : null}
 
-      {isCursor && usage.accounts?.length ? <CursorAccounts accounts={usage.accounts} /> : null}
+      {isCursor && usage.accounts?.length ? (
+        <CursorAccounts
+          accounts={usage.accounts}
+          selectedIndex={selectedCursorAccountIndex}
+          onSelect={setSelectedCursorAccountIndex}
+        />
+      ) : null}
 
-      <ModelBreakdown models={usage.models} serviceId={usage.service} />
-      <DailyChart service={usage} />
+      <ModelBreakdown models={selectedCursorAccount?.models ?? usage.models} serviceId={usage.service} />
+      <DailyChart service={selectedCursorAccount ? undefined : usage} account={selectedCursorAccount} />
     </div>
   );
 }
 
-function CursorAccounts({ accounts }: { accounts: NonNullable<ServiceUsage['accounts']> }) {
+function CursorRangeControls({
+  range,
+  onChange,
+}: {
+  range: CursorRange;
+  onChange: (range: CursorRange) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="grid gap-1 text-sm text-slate-600">
+          시작일
+          <input
+            type="date"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950"
+            value={range.start}
+            max={range.end}
+            onChange={(event) => onChange({ ...range, start: event.target.value })}
+          />
+        </label>
+        <label className="grid gap-1 text-sm text-slate-600">
+          종료일
+          <input
+            type="date"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950"
+            value={range.end}
+            min={range.start}
+            onChange={(event) => onChange({ ...range, end: event.target.value })}
+          />
+        </label>
+        <button
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          onClick={() => onChange(initialCursorRange())}
+        >
+          이번 달
+        </button>
+        <p className="text-sm text-slate-500">Cursor 토큰, 비용, 계정별 표, 일별 추이를 선택 기간 기준으로 다시 계산합니다.</p>
+      </div>
+    </div>
+  );
+}
+
+function CursorAccounts({
+  accounts,
+  selectedIndex,
+  onSelect,
+}: {
+  accounts: AccountUsage[];
+  selectedIndex: number | null;
+  onSelect: (index: number | null) => void;
+}) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-950">Cursor accounts</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <h2 className="text-sm font-semibold text-slate-950">Cursor 계정별 선택 기간 사용량</h2>
+        {selectedIndex !== null ? (
+          <button className="text-sm font-medium text-slate-600 hover:text-slate-950" onClick={() => onSelect(null)}>
+            전체 보기
+          </button>
+        ) : null}
       </div>
-      <table className="w-full text-left text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-4 py-3">Account</th>
-            <th className="px-4 py-3 text-right">Today cost</th>
-            <th className="px-4 py-3 text-right">Month cost</th>
-            <th className="px-4 py-3 text-right">Total tokens</th>
-            <th className="px-4 py-3 text-right">Requests</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {accounts.map((account) => (
-            <tr key={account.label}>
-              <td className="px-4 py-3 font-medium text-slate-900">{account.label}</td>
-              <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(account.cost.today)}</td>
-              <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(account.cost.thisMonth)}</td>
-              <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.tokens.total)}</td>
-              <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.requests)}</td>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">계정</th>
+              <th className="px-4 py-3 text-right">오늘 사용액</th>
+              <th className="px-4 py-3 text-right">선택 기간 사용액</th>
+              <th className="px-4 py-3 text-right">선택 기간 총 토큰</th>
+              <th className="px-4 py-3 text-right">입력/캐시 토큰</th>
+              <th className="px-4 py-3 text-right">출력 토큰</th>
+              <th className="px-4 py-3 text-right">요청 수</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {accounts.map((account, index) => {
+              const selected = selectedIndex === index;
+              return (
+                <tr
+                  key={account.label}
+                  className={`cursor-pointer ${selected ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
+                  onClick={() => onSelect(selected ? null : index)}
+                >
+                  <td className="px-4 py-3 font-medium text-slate-900">{account.label}</td>
+                  <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(account.cost.today)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(account.cost.thisMonth)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.tokens.total)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.tokens.input)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.tokens.output)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.requests)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

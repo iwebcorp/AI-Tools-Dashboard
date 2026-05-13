@@ -26,12 +26,12 @@ export function CostChart({ data }: { data: AllUsageResponse }) {
     cost: data[service].cost.thisMonth,
     tokens: data[service].tokens.total,
     fill: colors[service],
-    unit: service === 'figma' ? 'calls' : 'tokens',
+    unit: service === 'figma' ? '호출' : '토큰',
   }));
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <h3 className="text-base font-semibold text-slate-950">Service cost</h3>
+      <h3 className="text-base font-semibold text-slate-950">서비스별 이번 달 비용</h3>
       <div className="mt-4 h-72">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={rows}>
@@ -40,12 +40,12 @@ export function CostChart({ data }: { data: AllUsageResponse }) {
             <YAxis tickLine={false} axisLine={false} tickFormatter={(value) => `$${value}`} />
             <Tooltip
               formatter={(value, name) => {
-                if (name === 'cost') return [formatCurrency(Number(value)), 'cost'];
+                if (name === 'cost') return [formatCurrency(Number(value)), '비용'];
                 return [value, name];
               }}
               labelFormatter={(label, payload) => {
                 const row = payload?.[0]?.payload as { tokens?: number; unit?: string } | undefined;
-                return `${label} · ${formatNum(row?.tokens ?? 0)} ${row?.unit ?? 'tokens'}`;
+                return `${label} · ${formatNum(row?.tokens ?? 0)} ${row?.unit ?? '토큰'}`;
               }}
             />
             <Bar dataKey="cost" radius={[4, 4, 0, 0]} />

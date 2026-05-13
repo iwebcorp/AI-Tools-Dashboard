@@ -1,5 +1,5 @@
 export function formatNum(value: number): string {
-  return new Intl.NumberFormat('en', {
+  return new Intl.NumberFormat('ko-KR', {
     notation: value >= 10000 ? 'compact' : 'standard',
     maximumFractionDigits: value >= 10000 ? 1 : 0,
   }).format(value);

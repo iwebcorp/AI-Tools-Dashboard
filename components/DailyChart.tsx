@@ -1,19 +1,18 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import type { AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { AccountUsage, AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
 import { formatCurrency, formatNum } from './format';
 
 const serviceIds: ServiceId[] = ['openai', 'gemini', 'cursor', 'claude', 'figma'];
+const serviceNames: Record<ServiceId, string> = {
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+  cursor: 'Cursor',
+  claude: 'Claude',
+  figma: 'Figma',
+};
 const colors: Record<ServiceId, string> = {
   openai: '#639922',
   gemini: '#185FA5',
@@ -25,9 +24,10 @@ const colors: Record<ServiceId, string> = {
 interface DailyChartProps {
   data?: AllUsageResponse;
   service?: ServiceUsage;
+  account?: AccountUsage;
 }
 
-export function DailyChart({ data, service }: DailyChartProps) {
+export function DailyChart({ data, service, account }: DailyChartProps) {
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens');
   const [visible, setVisible] = useState<Record<ServiceId, boolean>>({
     openai: true,
@@ -39,7 +39,7 @@ export function DailyChart({ data, service }: DailyChartProps) {
 
   const rows = useMemo(() => {
     const byDate = new Map<string, Record<string, string | number>>();
-    const add = (id: ServiceId, usage: ServiceUsage) => {
+    const add = (id: ServiceId, usage: Pick<ServiceUsage, 'dailyHistory'>) => {
       for (const day of usage.dailyHistory) {
         const row = byDate.get(day.date) ?? { date: day.date.slice(5).replace('-', '/') };
         row[id] = metric === 'cost' ? day.cost : day.inputTokens + day.outputTokens || day.requests;
@@ -47,33 +47,36 @@ export function DailyChart({ data, service }: DailyChartProps) {
       }
     };
 
-    if (service) add(service.service, service);
+    if (account) add('cursor', account);
+    if (service && !account) add(service.service, service);
     if (data) serviceIds.forEach((id) => add(id, data[id]));
     return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value);
-  }, [data, metric, service]);
+  }, [account, data, metric, service]);
 
-  const activeServices = service ? [service.service] : serviceIds.filter((id) => visible[id]);
+  const activeServices = account ? ['cursor' as const] : service ? [service.service] : serviceIds.filter((id) => visible[id]);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-base font-semibold text-slate-950">Daily trend</h3>
+        <h3 className="text-base font-semibold text-slate-950">
+          {account ? `${account.label} 일별 추이` : '일별 추이'}
+        </h3>
         <div className="flex rounded-md border border-slate-200 p-1 text-sm">
           <button
             className={`rounded px-3 py-1 ${metric === 'tokens' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
             onClick={() => setMetric('tokens')}
           >
-            Tokens
+            토큰
           </button>
           <button
             className={`rounded px-3 py-1 ${metric === 'cost' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
             onClick={() => setMetric('cost')}
           >
-            Cost
+            비용
           </button>
         </div>
       </div>
-      {!service ? (
+      {!service && !account ? (
         <div className="mt-4 flex flex-wrap gap-3 text-sm">
           {serviceIds.map((id) => (
             <label key={id} className="flex items-center gap-2 text-slate-600">
@@ -83,7 +86,7 @@ export function DailyChart({ data, service }: DailyChartProps) {
                 onChange={(event) => setVisible((current) => ({ ...current, [id]: event.target.checked }))}
               />
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors[id] }} />
-              {id}
+              {serviceNames[id]}
             </label>
           ))}
         </div>

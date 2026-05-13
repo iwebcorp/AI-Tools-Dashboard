@@ -21,20 +21,20 @@ export function ServiceCard({ usage }: { usage: ServiceUsage }) {
             <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
             <h3 className="text-base font-semibold text-slate-950">{serviceNames[usage.service]}</h3>
           </div>
-          <p className="mt-1 text-xs text-slate-500">{usage.connected ? 'connected' : usage.error ?? 'disconnected'}</p>
+          <p className="mt-1 text-xs text-slate-500">{usage.connected ? '연결됨' : usage.error ?? '연결 안 됨'}</p>
         </div>
         <div className="text-right">
           <div className="text-lg font-semibold text-slate-950">{formatCurrency(usage.cost.thisMonth)}</div>
-          <div className="text-xs text-slate-500">this month</div>
+          <div className="text-xs text-slate-500">이번 달</div>
         </div>
       </div>
       <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
         <div>
-          <div className="text-slate-500">{isFigma ? 'API 호출 수' : 'Total tokens'}</div>
+          <div className="text-slate-500">{isFigma ? 'API 호출 수' : '총 토큰'}</div>
           <div className="font-semibold text-slate-900">{formatNum(usage.tokens.total)}</div>
         </div>
         <div>
-          <div className="text-slate-500">Requests</div>
+          <div className="text-slate-500">요청 수</div>
           <div className="font-semibold text-slate-900">{formatNum(usage.requests)}</div>
         </div>
       </div>

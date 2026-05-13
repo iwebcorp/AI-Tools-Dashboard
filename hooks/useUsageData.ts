@@ -3,7 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AllUsageResponse } from '@/lib/types';
 
-export function useUsageData() {
+interface UsageDataOptions {
+  cursorStart?: string;
+  cursorEnd?: string;
+}
+
+function usageAllPath(options: UsageDataOptions) {
+  const params = new URLSearchParams();
+  if (options.cursorStart) params.set('cursorStart', options.cursorStart);
+  if (options.cursorEnd) params.set('cursorEnd', options.cursorEnd);
+  const query = params.toString();
+  return `/api/usage/all${query ? `?${query}` : ''}`;
+}
+
+export function useUsageData(options: UsageDataOptions = {}) {
+  const { cursorStart, cursorEnd } = options;
   const [data, setData] = useState<AllUsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -16,7 +30,7 @@ export function useUsageData() {
     loadingRef.current = true;
     setError(null);
     try {
-      const response = await fetch('/api/usage/all', { cache: 'no-store' });
+      const response = await fetch(usageAllPath({ cursorStart, cursorEnd }), { cache: 'no-store' });
       if (!response.ok) throw new Error(`Request failed: ${response.status}`);
       const json = (await response.json()) as AllUsageResponse;
       setData(json);
@@ -27,7 +41,7 @@ export function useUsageData() {
       setLoading(false);
       loadingRef.current = false;
     }
-  }, []);
+  }, [cursorEnd, cursorStart]);
 
   const refresh = useCallback(async () => {
     if (loadingRef.current || refreshing) return;
@@ -35,7 +49,15 @@ export function useUsageData() {
     setRefreshing(true);
     setError(null);
     try {
-      const response = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
+      const response = await fetch('/api/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cursorStart,
+          cursorEnd,
+        }),
+        cache: 'no-store',
+      });
       if (!response.ok) throw new Error(`Refresh failed: ${response.status}`);
       const json = (await response.json()) as AllUsageResponse;
       setData(json);
@@ -47,7 +69,7 @@ export function useUsageData() {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [refreshing]);
+  }, [cursorEnd, cursorStart, refreshing]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => {

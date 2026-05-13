@@ -150,6 +150,11 @@ interface CursorSession {
   userId: string;
 }
 
+interface CursorUsageOptions {
+  startDate?: number;
+  endDate?: number;
+}
+
 function getCookieStringsFromEnv(): string[] {
   return (
     process.env.CURSOR_COOKIE_STRINGS?.split('||')
@@ -163,6 +168,9 @@ function getCursorAccountLabels(count: number): string[] {
     process.env.CURSOR_ACCOUNT_LABELS?.split(',')
       .map((label) => label.trim())
       .filter(Boolean) ?? [];
+  if (configured.length >= 0) {
+    return Array.from({ length: count }, (_, index) => configured[index] ?? `회사 ${index + 1}`);
+  }
   return Array.from({ length: count }, (_, index) => configured[index] ?? `회사 ${index + 1}`);
 }
 
@@ -265,7 +273,50 @@ async function fetchDashboardEmail(cookie: string): Promise<string | null> {
   }
 }
 
-async function fetchDashboardCookieUsage(cookieStrings: string[]): Promise<ServiceUsage> {
+async function fetchFilteredUsageEvents(
+  cookie: string,
+  startDate: number,
+  endDate: number
+): Promise<z.infer<typeof FilteredUsageSchema>> {
+  const pageSize = 1000;
+  const firstRaw = await postCursorDashboard(cookie, '/api/dashboard/get-filtered-usage-events', {
+    startDate,
+    endDate,
+    page: 1,
+    pageSize,
+  });
+  const first = FilteredUsageSchema.safeParse(firstRaw);
+  if (!first.success) {
+    console.error('[Cursor] Filtered usage schema changed:', firstRaw);
+    throw new Error('SCHEMA_CHANGED:filtered');
+  }
+
+  const total = first.data.totalUsageEventsCount ?? first.data.usageEventsDisplay?.length ?? 0;
+  const usageEventsDisplay = [...(first.data.usageEventsDisplay ?? [])];
+  const maxPages = 20;
+
+  for (let page = 2; usageEventsDisplay.length < total && page <= maxPages; page += 1) {
+    const raw = await postCursorDashboard(cookie, '/api/dashboard/get-filtered-usage-events', {
+      startDate,
+      endDate,
+      page,
+      pageSize,
+    });
+    const parsed = FilteredUsageSchema.safeParse(raw);
+    if (!parsed.success) {
+      console.error('[Cursor] Filtered usage schema changed:', raw);
+      throw new Error('SCHEMA_CHANGED:filtered');
+    }
+    usageEventsDisplay.push(...(parsed.data.usageEventsDisplay ?? []));
+  }
+
+  return {
+    ...first.data,
+    usageEventsDisplay,
+  };
+}
+
+async function fetchDashboardCookieUsage(cookieStrings: string[], options: CursorUsageOptions = {}): Promise<ServiceUsage> {
   const totals: ServiceUsage = {
     service: 'cursor',
     connected: true,
@@ -301,8 +352,10 @@ async function fetchDashboardCookieUsage(cookieStrings: string[]): Promise<Servi
       return emptyUsage('cursor', 'SCHEMA_CHANGED', 'Cursor current period API 응답 구조가 변경되었습니다.');
     }
 
-    const startDate = numberValue(current.data.billingCycleStart);
-    const endDate = Math.min(numberValue(current.data.billingCycleEnd) || Date.now(), Date.now());
+    const billingStart = numberValue(current.data.billingCycleStart);
+    const billingEnd = Math.min(numberValue(current.data.billingCycleEnd) || Date.now(), Date.now());
+    const startDate = options.startDate ?? billingStart;
+    const endDate = options.endDate ?? billingEnd;
     const aggregateRaw = await postCursorDashboard(cookie, '/api/dashboard/get-aggregated-usage-events', {
       startDate,
       endDate,
@@ -313,13 +366,8 @@ async function fetchDashboardCookieUsage(cookieStrings: string[]): Promise<Servi
       return emptyUsage('cursor', 'SCHEMA_CHANGED', 'Cursor aggregated usage API 응답 구조가 변경되었습니다.');
     }
 
-    const filteredRaw = await postCursorDashboard(cookie, '/api/dashboard/get-filtered-usage-events', {
-      startDate,
-      endDate,
-      page: 1,
-      pageSize: 1000,
-    });
-    const filtered = FilteredUsageSchema.safeParse(filteredRaw);
+    const filteredRaw = await fetchFilteredUsageEvents(cookie, startDate, endDate);
+    const filtered = { success: true as const, data: filteredRaw };
     if (!filtered.success) {
       console.error('[Cursor] Filtered usage schema changed:', filteredRaw);
       return emptyUsage('cursor', 'SCHEMA_CHANGED', 'Cursor usage events API 응답 구조가 변경되었습니다.');
@@ -418,14 +466,17 @@ function getLegacyUsageItems(raw: unknown): Array<[string, z.infer<typeof Legacy
   return items;
 }
 
-export async function fetchCursorUsage(): Promise<ServiceUsage> {
+export async function fetchCursorUsage(options: CursorUsageOptions = {}): Promise<ServiceUsage> {
   const cookieStrings = getCookieStringsFromEnv();
   if (cookieStrings.length > 0) {
     try {
-      return await fetchDashboardCookieUsage(cookieStrings);
+      return await fetchDashboardCookieUsage(cookieStrings, options);
     } catch (error) {
       console.error('[Cursor] Dashboard usage fetch failed:', error);
       const message = error instanceof Error ? error.message : '';
+      if (message.startsWith('SCHEMA_CHANGED')) {
+        return emptyUsage('cursor', 'SCHEMA_CHANGED', 'Cursor usage events API 응답 구조가 변경되었습니다.');
+      }
       if (message.startsWith('SESSION_EXPIRED')) {
         return emptyUsage('cursor', 'SESSION_EXPIRED', 'Cursor dashboard cookie를 브라우저에서 다시 복사하세요.');
       }
