@@ -54,12 +54,37 @@ const BillingProfileSchema = z
   })
   .passthrough();
 
-function getTokensFromEnv(): string[] {
+interface CursorSession {
+  token: string;
+  userId: string;
+}
+
+function getSessionsFromEnv(): CursorSession[] {
   const multi = process.env.CURSOR_SESSION_TOKENS?.split(',')
     .map((token) => token.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(toCursorSession)
+    .filter((session) => session.userId.length > 0);
   if (multi?.length) return multi;
-  return process.env.CURSOR_SESSION_TOKEN ? [process.env.CURSOR_SESSION_TOKEN] : [];
+  if (!process.env.CURSOR_SESSION_TOKEN) return [];
+  const session = toCursorSession(process.env.CURSOR_SESSION_TOKEN);
+  return session.userId ? [session] : [];
+}
+
+function toCursorSession(token: string): CursorSession {
+  const trimmed = token.trim();
+  return {
+    token: trimmed,
+    userId: extractUserId(trimmed),
+  };
+}
+
+function extractUserId(token: string): string {
+  try {
+    return decodeURIComponent(token).split('::')[0];
+  } catch {
+    return token.split('%3A%3A')[0].split('::')[0];
+  }
 }
 
 function addModelUsage(
@@ -102,8 +127,8 @@ async function detectBillingProfile(sessionToken: string): Promise<void> {
 }
 
 export async function fetchCursorUsage(): Promise<ServiceUsage> {
-  const sessionTokens = getTokensFromEnv();
-  if (sessionTokens.length === 0) {
+  const sessions = getSessionsFromEnv();
+  if (sessions.length === 0) {
     return emptyUsage(
       'cursor',
       'NOT_CONFIGURED',
@@ -124,12 +149,13 @@ export async function fetchCursorUsage(): Promise<ServiceUsage> {
     const modelMap = new Map<string, ModelUsage>();
     const dailyMap = new Map<string, DailyUsage>();
 
-    for (const sessionToken of sessionTokens) {
-      await detectBillingProfile(sessionToken);
+    for (const session of sessions) {
+      await detectBillingProfile(session.token);
 
-      const response = await fetch('https://www.cursor.com/api/usage', {
+      const response = await fetch(`https://www.cursor.com/api/usage?user=${encodeURIComponent(session.userId)}`, {
         headers: {
-          Cookie: `WorkosCursorSessionToken=${sessionToken}`,
+          Accept: 'application/json',
+          Cookie: `WorkosCursorSessionToken=${session.token}`,
           'User-Agent': 'Mozilla/5.0',
         },
         cache: 'no-store',
