@@ -10,6 +10,7 @@ export function emptyUsage(
     connected: false,
     error,
     errorMessage,
+    session: undefined,
     cost: { today: 0, thisMonth: 0 },
     tokens: { input: 0, output: 0, total: 0 },
     requests: 0,

@@ -1,5 +1,5 @@
 import type { ServiceUsage } from '@/lib/types';
-import { formatCurrency, formatNum } from './format';
+import { formatCurrency, formatDateTime, formatNum } from './format';
 
 const serviceNames: Record<ServiceUsage['service'], string> = {
   openai: 'OpenAI',
@@ -63,6 +63,14 @@ export function ServiceCard({ usage }: { usage: ServiceUsage }) {
       {usage.errorMessage ? (
         <div className="mt-4 rounded-xl border border-red-100 bg-red-50/50 p-3 text-xs font-medium leading-relaxed text-red-800">
           {usage.errorMessage}
+        </div>
+      ) : null}
+
+      {usage.session ? (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-medium text-slate-600">
+          Session {usage.session.active ? 'active' : 'inactive'}
+          {` · ${usage.session.source}`}
+          {usage.session.updatedAt ? ` · ${formatDateTime(new Date(usage.session.updatedAt))}` : ''}
         </div>
       ) : null}
     </div>

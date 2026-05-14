@@ -2,6 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 import type { AccountUsage, DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
+import { getSyncedSession } from '@/lib/session-store';
 import { emptyUsage, todayKey } from './shared';
 
 const CURSOR_FETCH_TIMEOUT_MS = 12_000;
@@ -161,6 +162,33 @@ function getCookieStringsFromEnv(): string[] {
       .map((cookie) => cookie.trim().replace(/^Cookie:\s*/i, ''))
       .filter(Boolean) ?? []
   );
+}
+
+async function getCookieStrings(): Promise<{ cookies: string[]; session?: ServiceUsage['session'] }> {
+  const synced = await getSyncedSession('cursor').catch(() => null);
+  if (synced?.cookies) {
+    return {
+      cookies: [synced.cookies],
+      session: {
+        active: true,
+        source: 'redis',
+        updatedAt: synced.updatedAt,
+      },
+    };
+  }
+
+  const cookies = getCookieStringsFromEnv();
+  if (cookies.length > 0) {
+    return {
+      cookies,
+      session: {
+        active: true,
+        source: 'env',
+      },
+    };
+  }
+
+  return { cookies: [] };
 }
 
 function getCursorAccountLabels(count: number): string[] {
@@ -467,10 +495,12 @@ function getLegacyUsageItems(raw: unknown): Array<[string, z.infer<typeof Legacy
 }
 
 export async function fetchCursorUsage(options: CursorUsageOptions = {}): Promise<ServiceUsage> {
-  const cookieStrings = getCookieStringsFromEnv();
+  const { cookies: cookieStrings, session } = await getCookieStrings();
   if (cookieStrings.length > 0) {
     try {
-      return await fetchDashboardCookieUsage(cookieStrings, options);
+      const usage = await fetchDashboardCookieUsage(cookieStrings, options);
+      usage.session = session;
+      return usage;
     } catch (error) {
       console.error('[Cursor] Dashboard usage fetch failed:', error);
       const message = error instanceof Error ? error.message : '';

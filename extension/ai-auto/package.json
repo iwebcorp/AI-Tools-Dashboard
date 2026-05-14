@@ -1,0 +1,39 @@
+{
+  "name": "ai-auto",
+  "displayName": "Ai auto",
+  "version": "0.0.1",
+  "description": "A basic Plasmo extension.",
+  "author": "DU",
+  "scripts": {
+    "dev": "plasmo dev",
+    "build": "plasmo build",
+    "package": "plasmo package"
+  },
+  "dependencies": {
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "@ianvs/prettier-plugin-sort-imports": "4.1.1",
+    "@types/chrome": "0.0.258",
+    "@types/node": "20.11.5",
+    "@types/react": "18.2.48",
+    "@types/react-dom": "18.2.18",
+    "plasmo": "0.90.5",
+    "prettier": "3.2.4",
+    "typescript": "5.3.3"
+  },
+  "manifest": {
+    "permissions": [
+      "cookies",
+      "tabs",
+      "storage",
+      "alarms"
+    ],
+    "host_permissions": [
+      "https://*.cursor.com/*",
+      "https://*.chatgpt.com/*",
+      "http://localhost:3000/*"
+    ]
+  }
+}

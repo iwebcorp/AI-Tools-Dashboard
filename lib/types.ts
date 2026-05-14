@@ -15,6 +15,7 @@ export interface ServiceUsage {
   connected: boolean;
   error?: ErrorCode;
   errorMessage?: string;
+  session?: SessionStatus;
   cost: {
     today: number;
     thisMonth: number;
@@ -30,6 +31,12 @@ export interface ServiceUsage {
   dailyHistory: DailyUsage[];
   accounts?: AccountUsage[];
   figma?: FigmaUsage;
+}
+
+export interface SessionStatus {
+  active: boolean;
+  source: 'redis' | 'env';
+  updatedAt?: string;
 }
 
 export interface FigmaUsage {

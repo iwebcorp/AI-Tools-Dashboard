@@ -50,7 +50,7 @@ corepack pnpm dev
 Vertex AI를 쓰지 않는 Gemini API key 방식은 전체 사용량 조회 API가 없습니다. 대신 앞으로의 호출을 이 앱의 proxy로 통과시키면 응답의 `usageMetadata`를 `data/gemini-usage.jsonl`에 저장하고 대시보드에서 집계합니다.
 
 ```bash
-curl -X POST http://localhost:3001/api/proxy/gemini \
+curl -X POST http://localhost:3000/api/proxy/gemini \
   -H "Content-Type: application/json" \
   -d '{
     "project": "projectA",
@@ -133,7 +133,7 @@ Google AI Studio에서 발급받은 영구 API 키를 사용합니다.
      ```env
      GEMINI_API_KEYS=default:AIzaSy...
      ```
-  3. 다른 앱이나 코드에서 Gemini를 호출할 때, 구글 서버로 직접 보내지 않고 이 대시보드의 **Proxy 주소(`http://localhost:3001/api/proxy/gemini`)**를 거쳐서 보내도록 코드를 수정합니다.
+  3. 다른 앱이나 코드에서 Gemini를 호출할 때, 구글 서버로 직접 보내지 않고 이 대시보드의 **Proxy 주소(`http://localhost:3000/api/proxy/gemini`)**를 거쳐서 보내도록 코드를 수정합니다.
   4. 프록시를 거쳐갈 때마다 대시보드가 사용량을 계산하여 자체적으로 누적 기록(`data/gemini-usage.jsonl`)합니다.
 
 ### 4. 💬 ChatGPT (OpenAI)
