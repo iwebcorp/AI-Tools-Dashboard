@@ -22,17 +22,17 @@ export function ServiceCard({ usage }: { usage: ServiceUsage }) {
   return (
     <div className="group rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-slate-300 hover:shadow-lg">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
-            <h3 className="text-lg font-bold tracking-tight text-slate-900">{serviceNames[usage.service]}</h3>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start gap-2.5">
+            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
+            <h3 className="min-w-0 break-words text-lg font-bold leading-tight tracking-tight text-slate-900">{serviceNames[usage.service]}</h3>
           </div>
-          <p className="mt-1.5 text-xs font-medium text-slate-500">
+          <p className="mt-1.5 break-words text-xs font-medium text-slate-500">
             {usage.connected ? '연결됨' : usage.error ?? '연결 안됨'}
             {figma?.accountLabel ? ` · ${figma.accountLabel}` : ''}
           </p>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <div className="text-2xl font-bold tracking-tight text-slate-900">{formatCurrency(usage.cost.thisMonth)}</div>
           <div className="text-xs font-medium text-slate-500">이번 달 비용</div>
         </div>
@@ -44,7 +44,7 @@ export function ServiceCard({ usage }: { usage: ServiceUsage }) {
           <div className="mt-1 text-lg font-bold text-slate-800">{figma ? formatNum(figma.projectCount) : formatNum(usage.tokens.total)}</div>
         </div>
         <div>
-          <div className="text-xs font-medium text-slate-500">{figma ? '오늘 생성' : isFigma && usage.error === 'PLAN_REQUIRED' ? 'API 상세 정보' : '총 요청 수'}</div>
+          <div className="text-xs font-medium text-slate-500">{figma ? 'API 기준 오늘 생성 프로젝트' : isFigma && usage.error === 'PLAN_REQUIRED' ? 'API 상세 정보' : '총 요청 수'}</div>
           <div className="mt-1 text-lg font-bold text-slate-800">{figma ? formatNum(figma.projectsCreatedToday ?? 0) : isFigma && usage.error === 'PLAN_REQUIRED' ? '제한됨' : formatNum(usage.requests)}</div>
         </div>
       </div>

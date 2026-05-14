@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AccountUsage, AllUsageResponse, FigmaFile, FigmaProject, FigmaUsage, ServiceId, ServiceUsage } from '@/lib/types';
+import type { AccountUsage, AllUsageResponse, FigmaFile, FigmaUsage, ServiceId, ServiceUsage } from '@/lib/types';
 import { useUsageData } from '@/hooks/useUsageData';
 import { CostChart } from './CostChart';
 import { DailyChart } from './DailyChart';
@@ -104,11 +104,10 @@ export function Dashboard() {
           {(['overview', ...serviceIds] as Tab[]).map((item) => (
             <button
               key={item}
-              className={`whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
-                tab === item 
-                  ? 'bg-slate-900 text-white shadow-md' 
+              className={`whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${tab === item
+                  ? 'bg-slate-900 text-white shadow-md'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
+                }`}
               onClick={() => setTab(item)}
             >
               {item === 'overview' ? '전체 요약' : serviceNames[item]}
@@ -145,7 +144,7 @@ function Overview({ data }: { data: AllUsageResponse }) {
       <div className="grid gap-4 md:grid-cols-3">
         <Metric label="이번 달 총 비용" value={formatCurrency(totalCost)} />
         <Metric label="총 토큰/API 호출" value={formatNum(totalTokens)} />
-        <Metric label="활성 서비스" value={`${active}/6`} />
+        <Metric label="연결된 서비스" value={`${active}/6`} />
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {serviceIds.map((id) => (
@@ -154,7 +153,7 @@ function Overview({ data }: { data: AllUsageResponse }) {
             label={serviceNames[id]}
             used={data[id].tokens.total}
             color={colors[id]}
-            unit={id === 'figma' ? '호출' : id === 'chatgpt' ? '대화' : '토큰'}
+            unit={id === 'figma' ? '파일' : id === 'chatgpt' ? '대화' : '토큰'}
           />
         ))}
       </div>
@@ -197,33 +196,24 @@ function ServiceDetail({
       <div className="grid gap-4 md:grid-cols-4">
         {isCursor ? (
           <>
-            <Metric label="오늘 사용액" value={formatCurrency(usage.cost.today)} />
-            <Metric label="선택 기간 사용액" value={formatCurrency(usage.cost.thisMonth)} />
+            <Metric label="선택 기간 비용" value={formatCurrency(usage.cost.today)} />
+            <Metric label="선택 기간 누적 비용" value={formatCurrency(usage.cost.thisMonth)} />
             <Metric label="선택 기간 총 토큰" value={formatNum(usage.tokens.total)} />
             <Metric label="선택 기간 요청 수" value={formatNum(usage.requests)} />
           </>
         ) : isFigma ? (
-          usage.error === 'PLAN_REQUIRED' ? (
-            <>
-              <Metric label="읽어온 총 파일 수" value={formatNum(usage.tokens.total)} />
-              <Metric label="플랜" value="Professional (추정)" />
-              <Metric label="API 호출 수" value="조회 불가 (Enterprise 전용)" />
-              <Metric label="이번 달 비용" value="조회 불가" />
-            </>
-          ) : (
-            <>
-              <Metric label="이번 달 API 호출 수" value={formatNum(usage.tokens.total)} />
-              <Metric label="코드 생성 호출 수" value={formatNum(usage.models.find((item) => item.model === 'code_generation')?.requests ?? 0)} />
-              <Metric label="이번 달 비용" value={formatCurrency(usage.cost.thisMonth)} />
-              <Metric label="요청 수" value={formatNum(usage.requests)} />
-            </>
-          )
+          <>
+            <Metric label="총 파일" value={formatNum(usage.figma?.fileCount ?? usage.tokens.total)} />
+            <Metric label="총 프로젝트" value={formatNum(usage.figma?.projectCount ?? 0)} />
+            <Metric label="API 기준 오늘 생성 프로젝트" value={formatNum(usage.figma?.projectsCreatedToday ?? 0)} />
+            <Metric label="접근 가능한 파일 중 오늘 수정" value={formatNum(usage.figma?.filesUpdatedToday ?? 0)} />
+          </>
         ) : usage.service === 'chatgpt' ? (
           <>
-            <Metric label="총 대화 수" value={formatNum(usage.requests)} />
-            <Metric label="최근 대화 횟수" value={formatNum(usage.dailyHistory.find(d => d.date === new Date().toISOString().slice(0, 10))?.requests ?? 0)} />
-            <Metric label="플랜" value="ChatGPT Plus" />
-            <Metric label="비용" value="구독 포함" />
+            <Metric label="총 요청 수" value={formatNum(usage.requests)} />
+            <Metric label="총 입력 토큰" value={formatNum(usage.tokens.input)} />
+            <Metric label="총 출력 토큰" value={formatNum(usage.tokens.output)} />
+            <Metric label="요금" value="플랜 포함" />
           </>
         ) : (
           <>
@@ -341,10 +331,10 @@ function CursorAccounts({
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">계정</th>
-              <th className="px-4 py-3 text-right">오늘 사용액</th>
-              <th className="px-4 py-3 text-right">선택 기간 사용액</th>
+              <th className="px-4 py-3 text-right">오늘 비용</th>
+              <th className="px-4 py-3 text-right">선택 기간 비용</th>
               <th className="px-4 py-3 text-right">선택 기간 총 토큰</th>
-              <th className="px-4 py-3 text-right">입력/캐시 토큰</th>
+              <th className="px-4 py-3 text-right">입력 토큰</th>
               <th className="px-4 py-3 text-right">출력 토큰</th>
               <th className="px-4 py-3 text-right">요청 수</th>
             </tr>
@@ -386,14 +376,14 @@ function FigmaFiles({ figma }: { figma: FigmaUsage }) {
       <div className="grid gap-4 md:grid-cols-4">
         <Metric label="총 프로젝트" value={formatNum(figma.projectCount)} />
         <Metric label="총 파일" value={formatNum(figma.fileCount)} />
-        <Metric label="오늘 생성 프로젝트" value={formatNum(createdToday)} />
-        <Metric label="오늘 수정 파일" value={formatNum(updatedToday)} />
+        <Metric label="API 기준 오늘 생성 프로젝트" value={formatNum(createdToday)} />
+        <Metric label="접근 가능한 파일 중 오늘 수정" value={formatNum(updatedToday)} />
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-950">Figma 파일 현황</h2>
+            <h2 className="text-sm font-semibold text-slate-950">Figma Files Dashboard</h2>
             <p className="mt-1 text-xs text-slate-500">최근 수정 파일: {recentlyUpdated?.name ?? '-'}</p>
           </div>
           <span className="text-xs font-medium text-slate-500">수정일 최신순</span>
@@ -459,80 +449,6 @@ function FigmaFileRow({ file, today }: { file: FigmaFile; today: string }) {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function FigmaProjects({ projects }: { projects: FigmaProject[] }) {
-  const today = dateInputValue(new Date());
-  const createdToday = projects.filter((project) => project.createdAt?.startsWith(today)).length;
-  const updatedToday = projects.filter((project) => project.updatedAt?.startsWith(today)).length;
-  const recentlyUpdated = projects.slice(0, 5);
-
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-3">
-        <Metric label="오늘 생성 프로젝트" value={formatNum(createdToday)} />
-        <Metric label="오늘 수정 프로젝트" value={formatNum(updatedToday)} />
-        <Metric label="최근 수정 프로젝트" value={recentlyUpdated[0]?.name ?? '-'} />
-      </div>
-
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-950">Figma 프로젝트 현황</h2>
-          <span className="text-xs font-medium text-slate-500">수정일 최신순</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">프로젝트</th>
-                <th className="px-4 py-3 text-right">파일 수</th>
-                <th className="px-4 py-3">생성일</th>
-                <th className="px-4 py-3">마지막 수정일</th>
-                <th className="px-4 py-3">상태</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {projects.map((project) => {
-                const isCreatedToday = project.createdAt?.startsWith(today);
-                const isUpdatedToday = project.updatedAt?.startsWith(today);
-                return (
-                  <tr key={project.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        {project.thumbnailUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={project.thumbnailUrl} alt="" className="h-9 w-12 rounded border border-slate-200 object-cover" />
-                        ) : (
-                          <div className="flex h-9 w-12 items-center justify-center rounded border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-400">
-                            FG
-                          </div>
-                        )}
-                        <div>
-                          <div className="font-medium text-slate-900">{project.name}</div>
-                          <div className="text-xs text-slate-400">{project.id}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-700">{project.fileCount === undefined ? '-' : formatNum(project.fileCount)}</td>
-                    <td className="px-4 py-3 text-slate-700">{formatIsoDate(project.createdAt)}</td>
-                    <td className="px-4 py-3 text-slate-700">{formatIsoDate(project.updatedAt)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {isCreatedToday ? <StatusBadge tone="green">오늘 생성</StatusBadge> : null}
-                        {isUpdatedToday ? <StatusBadge tone="blue">오늘 수정</StatusBadge> : null}
-                        {!isCreatedToday && !isUpdatedToday ? <StatusBadge tone="slate">변동 없음</StatusBadge> : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function StatusBadge({ children, tone }: { children: string; tone: 'green' | 'blue' | 'slate' }) {
   const className = {
     green: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15',
@@ -561,3 +477,4 @@ function Metric({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+

@@ -14,9 +14,9 @@ export function TokenGauge({ used, limit, label, color, unit = 'tokens' }: Token
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-slate-700">{label}</span>
-        <span className="text-sm text-slate-500">{formatNum(used)} {unit}</span>
+      <div className="flex items-start justify-between gap-3">
+        <span className="min-w-0 break-words text-sm font-medium leading-tight text-slate-700">{label}</span>
+        <span className="shrink-0 text-right text-sm text-slate-500">{formatNum(used)} {unit}</span>
       </div>
       {limit ? (
         <div className="mt-3">
