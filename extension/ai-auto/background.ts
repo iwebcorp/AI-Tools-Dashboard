@@ -1,10 +1,11 @@
 export const config = {
-  matches: ["https://*.cursor.com/*"]
+  matches: ["https://*.cursor.com/*", "https://chatgpt.com/*"]
 }
 console.log("SYNC URL", process.env.PLASMO_PUBLIC_SYNC_API_URL)
 console.log("SYNC SECRET", process.env.PLASMO_PUBLIC_SYNC_SECRET)
-const alarmName = "cursor-session-sync"
-const storageKey = "cursor-sync-state"
+const alarmName = "session-sync-alarm"
+const cursorStorageKey = "cursor-sync-state"
+const chatgptStorageKey = "chatgpt-sync-state"
 const syncUrl = process.env.PLASMO_PUBLIC_SYNC_API_URL
 const syncSecret = process.env.PLASMO_PUBLIC_SYNC_SECRET
 
@@ -15,11 +16,16 @@ interface SyncState {
   lastError?: string
 }
 
-function setState(next: Partial<SyncState>) {
-  return chrome.storage.local.get(storageKey).then((result) => {
-    const current = (result[storageKey] as SyncState | undefined) ?? {}
+function getStorageKey(service: "cursor" | "chatgpt") {
+  return service === "cursor" ? cursorStorageKey : chatgptStorageKey
+}
+
+function setState(service: "cursor" | "chatgpt", next: Partial<SyncState>) {
+  const key = getStorageKey(service)
+  return chrome.storage.local.get(key).then((result) => {
+    const current = (result[key] as SyncState | undefined) ?? {}
     return chrome.storage.local.set({
-      [storageKey]: {
+      [key]: {
         ...current,
         ...next
       }
@@ -27,13 +33,13 @@ function setState(next: Partial<SyncState>) {
   })
 }
 
-function readCursorCookies(): Promise<chrome.cookies.Cookie[]> {
-  return chrome.cookies.getAll({ domain: "cursor.com" })
+function readCookies(domain: string): Promise<chrome.cookies.Cookie[]> {
+  return chrome.cookies.getAll({ domain })
 }
 
-function buildCookieHeader(cookies: chrome.cookies.Cookie[]): string {
+function buildCookieHeader(cookies: chrome.cookies.Cookie[], domain: string): string {
   return cookies
-    .filter((cookie) => cookie.domain.includes("cursor.com"))
+    .filter((cookie) => cookie.domain.includes(domain))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((cookie) => `${cookie.name}=${cookie.value}`)
     .join("; ")
@@ -49,45 +55,37 @@ function simpleHash(value: string): string {
 
 async function syncCursorSession(force = false) {
   const now = new Date().toISOString()
-  console.log(`[Sync] Starting sync process (force=${force}) at`, now)
+  console.log(`[Sync-Cursor] Starting sync process (force=${force}) at`, now)
   
   try {
-    await setState({ lastAttemptAt: now, lastError: undefined })
-    
-    console.log("[Sync] ENV CHECK:", { syncUrl, syncSecret })
+    await setState("cursor", { lastAttemptAt: now, lastError: undefined })
     
     if (!syncUrl || !syncSecret) {
-      const missing = []
-      if (!syncUrl) missing.push("URL")
-      if (!syncSecret) missing.push("Secret")
-      const error = `Missing sync env: ${missing.join(", ")}`
-      console.error("[Sync]", error)
-      await setState({ lastError: error })
+      const error = "Missing sync env"
+      console.error("[Sync-Cursor]", error)
+      await setState("cursor", { lastError: error })
       return
     }
 
-    const cookies = await readCursorCookies()
-    console.log("[Sync] Cookies read:", cookies.length)
+    const cookies = await readCookies("cursor.com")
+    const cookieHeader = buildCookieHeader(cookies, "cursor.com")
     
-    const cookieHeader = buildCookieHeader(cookies)
     if (!cookieHeader.includes("WorkosCursorSessionToken=")) {
-      const error = "Cursor session cookie not found (WorkosCursorSessionToken)"
-      console.warn("[Sync]", error)
-      await setState({ lastError: error })
+      const error = "Cursor session cookie not found"
+      console.warn("[Sync-Cursor]", error)
+      await setState("cursor", { lastError: error })
       return
     }
 
     const nextHash = simpleHash(cookieHeader)
-    const current = await chrome.storage.local.get(storageKey)
-    const state = (current[storageKey] as SyncState | undefined) ?? {}
+    const current = await chrome.storage.local.get(cursorStorageKey)
+    const state = (current[cursorStorageKey] as SyncState | undefined) ?? {}
     
     if (!force && state.lastCookieHash === nextHash) {
-      console.log("[Sync] No change in cookies, skipping upload")
-      await setState({ lastError: undefined })
+      console.log("[Sync-Cursor] No change, skipping upload")
       return
     }
 
-    console.log("[Sync] Sending update to", syncUrl)
     const response = await fetch(syncUrl, {
       method: "POST",
       headers: {
@@ -103,22 +101,82 @@ async function syncCursorSession(force = false) {
     })
 
     if (!response.ok) {
-      const error = `Sync failed: ${response.status} ${response.statusText}`
-      console.error("[Sync]", error)
-      await setState({ lastError: error })
+      const error = `Sync failed: ${response.status}`
+      await setState("cursor", { lastError: error })
       return
     }
 
-    console.log("[Sync] Successfully synced")
-    await setState({
+    await setState("cursor", {
       lastCookieHash: nextHash,
       lastSyncedAt: now,
       lastError: undefined
     })
+    console.log("[Sync-Cursor] Successfully synced")
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err)
-    console.error("[Sync] Unhandled error during sync:", err)
-    await setState({ lastError: `Error: ${errorMessage}` })
+    console.error("[Sync-Cursor] Error:", err)
+    await setState("cursor", { lastError: String(err) })
+  }
+}
+
+async function syncChatgptSession(bearer?: string, force = false) {
+  const now = new Date().toISOString()
+  console.log(`[Sync-ChatGPT] Starting sync process (force=${force}) at`, now)
+  
+  try {
+    await setState("chatgpt", { lastAttemptAt: now, lastError: undefined })
+    
+    if (!syncUrl || !syncSecret) {
+      await setState("chatgpt", { lastError: "Missing sync env" })
+      return
+    }
+
+    const cookies = await readCookies("chatgpt.com")
+    const cookieHeader = buildCookieHeader(cookies, "chatgpt.com")
+    
+    if (!cookieHeader.includes("__Secure-next-auth.session-token")) {
+      await setState("chatgpt", { lastError: "ChatGPT session cookie not found" })
+      return
+    }
+
+    const nextHash = simpleHash(cookieHeader + (bearer || ""))
+    const current = await chrome.storage.local.get(chatgptStorageKey)
+    const state = (current[chatgptStorageKey] as SyncState | undefined) ?? {}
+    
+    if (!force && state.lastCookieHash === nextHash) {
+      console.log("[Sync-ChatGPT] No change, skipping upload")
+      return
+    }
+
+    const response = await fetch(syncUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-sync-secret": syncSecret
+      },
+      body: JSON.stringify({
+        service: "chatgpt",
+        cookies: cookieHeader,
+        bearer: bearer || undefined,
+        userAgent: navigator.userAgent,
+        updatedAt: now
+      })
+    })
+
+    if (!response.ok) {
+      const error = `Sync failed: ${response.status}`
+      await setState("chatgpt", { lastError: error })
+      return
+    }
+
+    await setState("chatgpt", {
+      lastCookieHash: nextHash,
+      lastSyncedAt: now,
+      lastError: undefined
+    })
+    console.log("[Sync-ChatGPT] Successfully synced")
+  } catch (err) {
+    console.error("[Sync-ChatGPT] Error:", err)
+    await setState("chatgpt", { lastError: String(err) })
   }
 }
 
@@ -131,27 +189,63 @@ function ensureAlarm() {
 chrome.runtime.onInstalled.addListener(() => {
   ensureAlarm()
   void syncCursorSession()
+  void syncChatgptSession()
 })
 
 chrome.runtime.onStartup.addListener(() => {
   ensureAlarm()
   void syncCursorSession()
+  void syncChatgptSession()
 })
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === alarmName) {
     void syncCursorSession()
+    void syncChatgptSession()
   }
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "sync") {
-    void syncCursorSession(true).then(() => sendResponse({ ok: true }))
-    return true // Keep channel open for async response
+    // Wait for both to complete before responding
+    Promise.all([
+      syncCursorSession(true),
+      syncChatgptSession(undefined, true)
+    ]).then(() => {
+      sendResponse({ ok: true })
+    }).catch((err) => {
+      console.error("[Sync-All] Error:", err)
+      sendResponse({ ok: false, error: String(err) })
+    })
+    return true
+  }
+  
+  if (message.action === "sync-service") {
+    const service = message.service as "cursor" | "chatgpt"
+    const promise = service === "cursor" 
+      ? syncCursorSession(true) 
+      : syncChatgptSession(undefined, true)
+      
+    promise.then(() => {
+      sendResponse({ ok: true })
+    }).catch((err) => {
+      console.error(`[Sync-${service}] Error:`, err)
+      sendResponse({ ok: false, error: String(err) })
+    })
+    return true
+  }
+
+  if (message.action === "sync-chatgpt") {
+    void syncChatgptSession(message.bearer).then(() => sendResponse({ ok: true }))
+    return true
   }
 })
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete" || !tab.url?.includes("cursor.com")) return
-  void syncCursorSession()
+  if (changeInfo.status !== "complete") return
+  if (tab.url?.includes("cursor.com")) {
+    void syncCursorSession()
+  } else if (tab.url?.includes("chatgpt.com")) {
+    void syncChatgptSession()
+  }
 })

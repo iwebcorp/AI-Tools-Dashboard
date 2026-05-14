@@ -16,6 +16,7 @@ export function emptyUsage(
     requests: 0,
     models: [],
     dailyHistory: [],
+    accounts: [],
   };
 }
 

@@ -2,7 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 import type { AccountUsage, DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
-import { getSyncedSession } from '@/lib/session-store';
+import { getSyncedSessions } from '@/lib/session-store';
 import { emptyUsage, todayKey } from './shared';
 
 const CURSOR_FETCH_TIMEOUT_MS = 12_000;
@@ -165,20 +165,23 @@ function getCookieStringsFromEnv(): string[] {
 }
 
 async function getCookieStrings(): Promise<{ cookies: string[]; session?: ServiceUsage['session'] }> {
-  const synced = await getSyncedSession('cursor').catch(() => null);
-  if (synced?.cookies) {
+  const syncedSessions = await getSyncedSessions('cursor').catch(() => []);
+  console.log(`[CursorService] Found ${syncedSessions.length} synced sessions in Redis`);
+  
+  if (syncedSessions.length > 0) {
     return {
-      cookies: [synced.cookies],
+      cookies: syncedSessions.map((s) => s.cookies),
       session: {
         active: true,
         source: 'redis',
-        updatedAt: synced.updatedAt,
+        updatedAt: syncedSessions[0].updatedAt,
       },
     };
   }
 
   const cookies = getCookieStringsFromEnv();
   if (cookies.length > 0) {
+    console.log(`[CursorService] Using ${cookies.length} sessions from environment variables`);
     return {
       cookies,
       session: {
@@ -188,6 +191,7 @@ async function getCookieStrings(): Promise<{ cookies: string[]; session?: Servic
     };
   }
 
+  console.warn('[CursorService] No synced sessions found in Redis or ENV');
   return { cookies: [] };
 }
 
@@ -345,6 +349,7 @@ async function fetchFilteredUsageEvents(
 }
 
 async function fetchDashboardCookieUsage(cookieStrings: string[], options: CursorUsageOptions = {}): Promise<ServiceUsage> {
+  console.log(`[Cursor] Fetching usage for ${cookieStrings.length} accounts...`);
   const totals: ServiceUsage = {
     service: 'cursor',
     connected: true,
@@ -360,124 +365,125 @@ async function fetchDashboardCookieUsage(cookieStrings: string[], options: Curso
   const accounts: AccountUsage[] = [];
 
   for (const [index, cookie] of cookieStrings.entries()) {
-    const email = await fetchDashboardEmail(cookie);
-    const label = email ? `${accountLabels[index]} (${email})` : accountLabels[index];
-    const account: AccountUsage = {
-      label,
-      cost: { today: 0, thisMonth: 0 },
-      tokens: { input: 0, output: 0, total: 0 },
-      requests: 0,
-      models: [],
-      dailyHistory: [],
-    };
-    const accountModelMap = new Map<string, ModelUsage>();
-    const accountDailyMap = new Map<string, DailyUsage>();
-
-    const currentRaw = await postCursorDashboard(cookie, '/api/dashboard/get-current-period-usage', {});
-    const current = CurrentPeriodUsageSchema.safeParse(currentRaw);
-    if (!current.success) {
-      console.error('[Cursor] Current period schema changed:', currentRaw);
-      return emptyUsage('cursor', 'SCHEMA_CHANGED', 'Cursor current period API 응답 구조가 변경되었습니다.');
-    }
-
-    const billingStart = numberValue(current.data.billingCycleStart);
-    const billingEnd = Math.min(numberValue(current.data.billingCycleEnd) || Date.now(), Date.now());
-    const startDate = options.startDate ?? billingStart;
-    const endDate = options.endDate ?? billingEnd;
-    const aggregateRaw = await postCursorDashboard(cookie, '/api/dashboard/get-aggregated-usage-events', {
-      startDate,
-      endDate,
-    });
-    const aggregate = AggregatedUsageSchema.safeParse(aggregateRaw);
-    if (!aggregate.success) {
-      console.error('[Cursor] Aggregated usage schema changed:', aggregateRaw);
-      return emptyUsage('cursor', 'SCHEMA_CHANGED', 'Cursor aggregated usage API 응답 구조가 변경되었습니다.');
-    }
-
-    const filteredRaw = await fetchFilteredUsageEvents(cookie, startDate, endDate);
-    const filtered = { success: true as const, data: filteredRaw };
-    if (!filtered.success) {
-      console.error('[Cursor] Filtered usage schema changed:', filteredRaw);
-      return emptyUsage('cursor', 'SCHEMA_CHANGED', 'Cursor usage events API 응답 구조가 변경되었습니다.');
-    }
-
-    const aggregateData = aggregate.data;
-    const accountInput =
-      numberValue(aggregateData.totalInputTokens) +
-      numberValue(aggregateData.totalCacheWriteTokens) +
-      numberValue(aggregateData.totalCacheReadTokens);
-    const accountOutput = numberValue(aggregateData.totalOutputTokens);
-    const accountCost = numberValue(aggregateData.totalCostCents) / 100;
-
-    totals.tokens.input += accountInput;
-    totals.tokens.output += accountOutput;
-    totals.tokens.total += accountInput + accountOutput;
-    totals.cost.thisMonth += accountCost;
-    totals.requests += filtered.data.totalUsageEventsCount ?? 0;
-    account.tokens.input += accountInput;
-    account.tokens.output += accountOutput;
-    account.tokens.total += accountInput + accountOutput;
-    account.cost.thisMonth += accountCost;
-    account.requests += filtered.data.totalUsageEventsCount ?? 0;
-
-    for (const item of aggregateData.aggregations ?? []) {
-      const inputTokens =
-        numberValue(item.inputTokens) + numberValue(item.cacheWriteTokens) + numberValue(item.cacheReadTokens);
-      const outputTokens = numberValue(item.outputTokens);
-      const model = dashboardModelName(item);
-      const cost = numberValue(item.totalCents) / 100;
-      addModelUsage(modelMap, model, inputTokens, outputTokens, 0, cost);
-      addModelUsage(accountModelMap, model, inputTokens, outputTokens, 0, cost);
-    }
-
-    for (const event of filtered.data.usageEventsDisplay ?? []) {
-      const timestamp = numberValue(event.timestamp);
-      if (!timestamp) continue;
-      const date = new Date(timestamp).toISOString().slice(0, 10);
-      const tokenUsage = event.tokenUsage;
-      const inputTokens =
-        numberValue(tokenUsage?.inputTokens) +
-        numberValue(tokenUsage?.cacheWriteTokens) +
-        numberValue(tokenUsage?.cacheReadTokens);
-      const outputTokens = numberValue(tokenUsage?.outputTokens);
-      const cost = numberValue(event.chargedCents ?? tokenUsage?.totalCents) / 100;
-      const currentDaily = dailyMap.get(date) ?? {
-        date,
-        inputTokens: 0,
-        outputTokens: 0,
+    const maskedCookie = cookie.substring(0, 30) + '...';
+    console.log(`[Cursor] [Account ${index}] Processing with cookie: ${maskedCookie}`);
+    
+    try {
+      const email = await fetchDashboardEmail(cookie);
+      console.log(`[Cursor] [Account ${index}] Email: ${email || 'unknown'}`);
+      
+      const label = email ? `${accountLabels[index]} (${email})` : accountLabels[index];
+      const account: AccountUsage = {
+        label,
+        cost: { today: 0, thisMonth: 0 },
+        tokens: { input: 0, output: 0, total: 0 },
         requests: 0,
-        cost: 0,
+        models: [],
+        dailyHistory: [],
       };
-      currentDaily.inputTokens += inputTokens;
-      currentDaily.outputTokens += outputTokens;
-      currentDaily.requests += 1;
-      currentDaily.cost += cost;
-      dailyMap.set(date, currentDaily);
+      const accountModelMap = new Map<string, ModelUsage>();
+      const accountDailyMap = new Map<string, DailyUsage>();
 
-      const accountCurrentDaily = accountDailyMap.get(date) ?? {
-        date,
-        inputTokens: 0,
-        outputTokens: 0,
-        requests: 0,
-        cost: 0,
-      };
-      accountCurrentDaily.inputTokens += inputTokens;
-      accountCurrentDaily.outputTokens += outputTokens;
-      accountCurrentDaily.requests += 1;
-      accountCurrentDaily.cost += cost;
-      accountDailyMap.set(date, accountCurrentDaily);
+      console.log(`[Cursor] [Account ${index}] Fetching current period usage...`);
+      const currentRaw = await postCursorDashboard(cookie, '/api/dashboard/get-current-period-usage', {});
+      const current = CurrentPeriodUsageSchema.safeParse(currentRaw);
+      if (!current.success) {
+        console.error(`[Cursor] [Account ${index}] Current period schema mismatch`, currentRaw);
+        continue;
+      }
+
+      const billingStart = numberValue(current.data.billingCycleStart);
+      const billingEnd = Math.min(numberValue(current.data.billingCycleEnd) || Date.now(), Date.now());
+      const startDate = options.startDate ?? billingStart;
+      const endDate = options.endDate ?? billingEnd;
+
+      console.log(`[Cursor] [Account ${index}] Fetching aggregated usage...`);
+      const aggregateRaw = await postCursorDashboard(cookie, '/api/dashboard/get-aggregated-usage-events', {
+        startDate,
+        endDate,
+      });
+      const aggregate = AggregatedUsageSchema.safeParse(aggregateRaw);
+      if (!aggregate.success) {
+        console.error(`[Cursor] [Account ${index}] Aggregated usage schema mismatch`, aggregateRaw);
+        continue;
+      }
+
+      console.log(`[Cursor] [Account ${index}] Fetching filtered events...`);
+      const filteredRaw = await fetchFilteredUsageEvents(cookie, startDate, endDate);
+      
+      const aggregateData = aggregate.data;
+      const accountInput =
+        numberValue(aggregateData.totalInputTokens) +
+        numberValue(aggregateData.totalCacheWriteTokens) +
+        numberValue(aggregateData.totalCacheReadTokens);
+      const accountOutput = numberValue(aggregateData.totalOutputTokens);
+      const accountCost = numberValue(aggregateData.totalCostCents) / 100;
+
+      console.log(`[Cursor] [Account ${index}] Success: cost=$${accountCost.toFixed(2)}, tokens=${accountInput+accountOutput}`);
+
+      totals.tokens.input += accountInput;
+      totals.tokens.output += accountOutput;
+      totals.tokens.total += accountInput + accountOutput;
+      totals.cost.thisMonth += accountCost;
+      totals.requests += filteredRaw.totalUsageEventsCount ?? 0;
+      
+      account.tokens.input += accountInput;
+      account.tokens.output += accountOutput;
+      account.tokens.total += accountInput + accountOutput;
+      account.cost.thisMonth += accountCost;
+      account.requests += filteredRaw.totalUsageEventsCount ?? 0;
+
+      for (const item of aggregateData.aggregations ?? []) {
+        const inputTokens =
+          numberValue(item.inputTokens) + numberValue(item.cacheWriteTokens) + numberValue(item.cacheReadTokens);
+        const outputTokens = numberValue(item.outputTokens);
+        const model = dashboardModelName(item);
+        const cost = numberValue(item.totalCents) / 100;
+        addModelUsage(modelMap, model, inputTokens, outputTokens, 0, cost);
+        addModelUsage(accountModelMap, model, inputTokens, outputTokens, 0, cost);
+      }
+
+      for (const event of filteredRaw.usageEventsDisplay ?? []) {
+        const timestamp = numberValue(event.timestamp);
+        if (!timestamp) continue;
+        const date = new Date(timestamp).toISOString().slice(0, 10);
+        const tokenUsage = event.tokenUsage;
+        const inputTokens =
+          numberValue(tokenUsage?.inputTokens) +
+          numberValue(tokenUsage?.cacheWriteTokens) +
+          numberValue(tokenUsage?.cacheReadTokens);
+        const outputTokens = numberValue(tokenUsage?.outputTokens);
+        const cost = numberValue(event.chargedCents ?? tokenUsage?.totalCents) / 100;
+        
+        const updateDaily = (map: Map<string, DailyUsage>) => {
+          const current = map.get(date) ?? { date, inputTokens: 0, outputTokens: 0, requests: 0, cost: 0 };
+          current.inputTokens += inputTokens;
+          current.outputTokens += outputTokens;
+          current.requests += 1;
+          current.cost += cost;
+          map.set(date, current);
+        };
+
+        updateDaily(dailyMap);
+        updateDaily(accountDailyMap);
+      }
+
+      account.models = [...accountModelMap.values()].sort((a, b) => b.cost - a.cost);
+      account.dailyHistory = [...accountDailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+      account.cost.today = account.dailyHistory.find((entry) => entry.date === todayKey())?.cost ?? 0;
+      accounts.push(account);
+      
+    } catch (e) {
+      console.error(`[Cursor] [Account ${index}] Error during retrieval:`, e);
     }
-
-    account.models = [...accountModelMap.values()].sort((a, b) => b.cost - a.cost);
-    account.dailyHistory = [...accountDailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
-    account.cost.today = account.dailyHistory.find((entry) => entry.date === todayKey())?.cost ?? 0;
-    accounts.push(account);
   }
 
   totals.models = [...modelMap.values()].sort((a, b) => b.cost - a.cost);
   totals.dailyHistory = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
   totals.cost.today = totals.dailyHistory.find((entry) => entry.date === todayKey())?.cost ?? 0;
   totals.accounts = accounts;
+  
+  console.log(`[Cursor] Final aggregation: ${accounts.length} accounts merged, total monthly cost: $${totals.cost.thisMonth.toFixed(2)}`);
   return totals;
 }
 

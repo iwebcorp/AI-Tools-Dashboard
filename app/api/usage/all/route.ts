@@ -5,6 +5,7 @@ import { fetchFigmaUsage } from '@/lib/services/figmaService';
 import { fetchGeminiUsage } from '@/lib/services/geminiService';
 import { fetchOpenaiUsage } from '@/lib/services/openaiService';
 import { fetchChatgptUsage } from '@/lib/services/chatgptService';
+import { emptyUsage } from '@/lib/services/shared';
 import type { AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
 
 const fetchers = {
@@ -40,14 +41,19 @@ async function getServiceUsage(service: ServiceId, usageRange: UsageRange): Prom
   const cached = getCache<ServiceUsage>(cacheKey);
   if (cached) return cached;
 
-  const data = service === 'cursor' ? await fetchCursorUsage(usageRange) : await fetchers[service](usageRange);
-  setCache(cacheKey, data);
-  return data;
+  try {
+    const data = service === 'cursor' ? await fetchCursorUsage(usageRange) : await fetchers[service](usageRange);
+    setCache(cacheKey, data);
+    return data;
+  } catch (error) {
+    console.error(`[API:Usage] Failed to fetch ${service}:`, error);
+    return emptyUsage(service, 'UNKNOWN', error instanceof Error ? error.message : String(error));
+  }
 }
 
 export async function GET(request: Request) {
   const usageRange = parseUsageRange(request);
-  const [openai, gemini, cursor, figma, chatgpt] = await Promise.allSettled([
+  const [openai, gemini, cursor, figma, chatgpt] = await Promise.all([
     getServiceUsage('openai', usageRange),
     getServiceUsage('gemini', usageRange),
     getServiceUsage('cursor', usageRange),
@@ -55,24 +61,12 @@ export async function GET(request: Request) {
     getServiceUsage('chatgpt', usageRange),
   ]);
 
-  const fallback = (service: ServiceId): ServiceUsage => ({
-    service,
-    connected: false,
-    error: 'UNKNOWN',
-    errorMessage: 'Service failed before returning a normalized response.',
-    cost: { today: 0, thisMonth: 0 },
-    tokens: { input: 0, output: 0, total: 0 },
-    requests: 0,
-    models: [],
-    dailyHistory: [],
-  });
-
   const data: AllUsageResponse = {
-    openai: openai.status === 'fulfilled' ? openai.value : fallback('openai'),
-    gemini: gemini.status === 'fulfilled' ? gemini.value : fallback('gemini'),
-    cursor: cursor.status === 'fulfilled' ? cursor.value : fallback('cursor'),
-    figma: figma.status === 'fulfilled' ? figma.value : fallback('figma'),
-    chatgpt: chatgpt.status === 'fulfilled' ? chatgpt.value : fallback('chatgpt'),
+    openai,
+    gemini,
+    cursor,
+    figma,
+    chatgpt,
     fetchedAt: new Date().toISOString(),
   };
 

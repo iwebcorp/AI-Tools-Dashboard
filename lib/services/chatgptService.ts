@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
+import { getSyncedSession } from '@/lib/session-store';
 import { emptyUsage } from './shared';
 
 type JsonObject = Record<string, unknown>;
@@ -11,12 +12,41 @@ interface SurfaceUsage {
   requests: number;
 }
 
-export async function fetchChatgptUsage(options: { startDate?: number; endDate?: number } = {}): Promise<ServiceUsage> {
+async function getChatgptAuth(): Promise<{ cookies: string | null; bearer: string | null; session?: ServiceUsage['session'] }> {
+  const synced = await getSyncedSession('chatgpt').catch(() => null);
+  if (synced?.cookies) {
+    return {
+      cookies: synced.cookies,
+      bearer: synced.bearer ?? null,
+      session: {
+        active: true,
+        source: 'redis',
+        updatedAt: synced.updatedAt,
+      },
+    };
+  }
+
   const cookies = process.env.CHATGPT_COOKIES;
-  const bearerToken = process.env.CHATGPT_BEARER_TOKEN;
+  const bearer = process.env.CHATGPT_BEARER_TOKEN;
+  if (cookies) {
+    return {
+      cookies,
+      bearer: bearer ?? null,
+      session: {
+        active: true,
+        source: 'env',
+      },
+    };
+  }
+
+  return { cookies: null, bearer: null };
+}
+
+export async function fetchChatgptUsage(options: { startDate?: number; endDate?: number } = {}): Promise<ServiceUsage> {
+  const { cookies, bearer: bearerToken, session } = await getChatgptAuth();
   
   if (!cookies || !bearerToken) {
-    return emptyUsage('chatgpt', 'NOT_CONFIGURED', 'CHATGPT_COOKIES 및 CHATGPT_BEARER_TOKEN 설정이 필요합니다.');
+    return emptyUsage('chatgpt', 'NOT_CONFIGURED', 'ChatGPT 세션이 동기화되지 않았거나 설정이 필요합니다.');
   }
 
   const totals: ServiceUsage = {
