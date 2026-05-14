@@ -10,12 +10,11 @@ import { ModelBreakdown } from './ModelBreakdown';
 import { ServiceCard } from './ServiceCard';
 import { TokenGauge } from './TokenGauge';
 
-const serviceIds: ServiceId[] = ['openai', 'gemini', 'cursor', 'claude', 'figma', 'chatgpt'];
+const serviceIds: ServiceId[] = ['openai', 'gemini', 'cursor', 'figma', 'chatgpt'];
 const serviceNames: Record<ServiceId, string> = {
   openai: 'OpenAI',
   gemini: 'Gemini',
   cursor: 'Cursor',
-  claude: 'Claude',
   figma: 'Figma',
   chatgpt: 'ChatGPT',
 };
@@ -23,7 +22,6 @@ const colors: Record<ServiceId, string> = {
   openai: '#639922',
   gemini: '#185FA5',
   cursor: '#BA7517',
-  claude: '#7F77DD',
   figma: '#D85A30',
   chatgpt: '#10A37F',
 };
@@ -73,52 +71,64 @@ export function Dashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 sm:p-6">
-      <div className="mx-auto max-w-7xl">
-        <header className="flex flex-wrap items-center justify-between gap-4">
+    <main className="min-h-screen bg-slate-50/50 text-slate-950">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 px-4 py-4 backdrop-blur-md sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">AI 사용량 대시보드</h1>
-            <p className="mt-1 text-sm text-slate-500">OpenAI, Gemini, Cursor, Claude, Figma, ChatGPT 사용량 모니터링</p>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">AI Usage Dashboard</h1>
+            <p className="mt-1 text-sm font-medium text-slate-500">OpenAI, Gemini, Cursor, Figma, ChatGPT 통합 모니터링</p>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-500">마지막 업데이트 {formatDateTime(lastUpdated)}</span>
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-slate-500">
+              마지막 업데이트 <span className="text-slate-700">{formatDateTime(lastUpdated)}</span>
+            </span>
             <button
-              className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-slate-800 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
               disabled={refreshing}
               onClick={() => void refresh()}
             >
-              {refreshing ? '새로고침 중' : '새로고침'}
+              {refreshing ? '새로고침 중...' : '데이터 새로고침'}
             </button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {error ? <div className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+      <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:px-8">
+        {error ? (
+          <div className="mb-6 rounded-xl bg-red-50 p-4 text-sm font-medium text-red-700 shadow-sm ring-1 ring-inset ring-red-600/10">
+            {error}
+          </div>
+        ) : null}
 
-        <nav className="mt-6 flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1">
+        <nav className="mb-8 flex gap-2 overflow-x-auto rounded-xl border border-slate-200/60 bg-white/60 p-1.5 shadow-sm backdrop-blur-sm">
           {(['overview', ...serviceIds] as Tab[]).map((item) => (
             <button
               key={item}
-              className={`rounded-md px-4 py-2 text-sm font-medium ${
-                tab === item ? 'bg-slate-950 text-white' : 'text-slate-600 hover:bg-slate-100'
+              className={`whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+                tab === item 
+                  ? 'bg-slate-900 text-white shadow-md' 
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
               onClick={() => setTab(item)}
             >
-              {item === 'overview' ? '전체' : serviceNames[item]}
+              {item === 'overview' ? '전체 요약' : serviceNames[item]}
             </button>
           ))}
         </nav>
 
-        {data ? (
-          tab === 'overview' ? (
-            <Overview data={data} />
-          ) : (
-            <ServiceDetail
-              usage={data[tab]}
-              cursorRange={cursorRange}
-              onCursorRangeChange={setCursorRange}
-            />
-          )
-        ) : null}
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {data ? (
+            tab === 'overview' ? (
+              <Overview data={data} />
+            ) : (
+              <ServiceDetail
+                usage={data[tab]}
+                cursorRange={cursorRange}
+                onCursorRangeChange={setCursorRange}
+              />
+            )
+          ) : null}
+        </div>
       </div>
     </main>
   );
@@ -189,12 +199,21 @@ function ServiceDetail({
             <Metric label="선택 기간 요청 수" value={formatNum(usage.requests)} />
           </>
         ) : isFigma ? (
-          <>
-            <Metric label="이번 달 API 호출 수" value={formatNum(usage.tokens.total)} />
-            <Metric label="코드 생성 호출 수" value={formatNum(usage.models.find((item) => item.model === 'code_generation')?.requests ?? 0)} />
-            <Metric label="이번 달 비용" value={formatCurrency(usage.cost.thisMonth)} />
-            <Metric label="요청 수" value={formatNum(usage.requests)} />
-          </>
+          usage.error === 'PLAN_REQUIRED' ? (
+            <>
+              <Metric label="읽어온 총 파일 수" value={formatNum(usage.tokens.total)} />
+              <Metric label="플랜" value="Professional (추정)" />
+              <Metric label="API 호출 수" value="조회 불가 (Enterprise 전용)" />
+              <Metric label="이번 달 비용" value="조회 불가" />
+            </>
+          ) : (
+            <>
+              <Metric label="이번 달 API 호출 수" value={formatNum(usage.tokens.total)} />
+              <Metric label="코드 생성 호출 수" value={formatNum(usage.models.find((item) => item.model === 'code_generation')?.requests ?? 0)} />
+              <Metric label="이번 달 비용" value={formatCurrency(usage.cost.thisMonth)} />
+              <Metric label="요청 수" value={formatNum(usage.requests)} />
+            </>
+          )
         ) : usage.service === 'chatgpt' ? (
           <>
             <Metric label="총 대화 수" value={formatNum(usage.requests)} />
@@ -222,8 +241,10 @@ function ServiceDetail({
         />
       ) : null}
 
-      <ModelBreakdown models={selectedCursorAccount?.models ?? usage.models} serviceId={usage.service} />
-      <DailyChart service={selectedCursorAccount ? undefined : usage} account={selectedCursorAccount} />
+      <ModelBreakdown models={selectedCursorAccount?.models ?? usage.models} serviceId={usage.service} error={usage.error} />
+      {usage.error === 'PLAN_REQUIRED' ? null : (
+        <DailyChart service={selectedCursorAccount ? undefined : usage} account={selectedCursorAccount} />
+      )}
     </div>
   );
 }

@@ -43,7 +43,6 @@ data/
 *.tsbuildinfo
 next-env.d.ts
 
-*.md
 *.log
 .log*
-*.mjs
+scratch/

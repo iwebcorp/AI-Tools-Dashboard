@@ -68,3 +68,19 @@ corepack pnpm exec tsc --noEmit
 corepack pnpm lint
 corepack pnpm build
 ```
+
+## Cursor 토큰 및 쿠키 만료 시 갱신 방법
+
+Cursor 세션 토큰(`WorkosCursorSessionToken`)은 발급 후 **보통 60일(약 2개월)** 동안 유효합니다. 만약 만료되거나 서버 측에서 세션을 갱신하여 대시보드에 에러(`SESSION_EXPIRED`)가 표시된다면 다음 방법으로 갱신하세요.
+
+1. 브라우저에서 [cursor.com/dashboard](https://www.cursor.com/dashboard) 페이지에 접속하여 로그인합니다.
+2. 개발자 도구(`F12` 또는 `Cmd+Option+I`)를 열고 **Network(네트워크)** 탭으로 이동합니다.
+3. 페이지를 **새로고침(`F5`)** 합니다.
+4. 네트워크 목록에서 `get-user-analytics` 또는 `get-monthly-invoice`와 같은 항목을 클릭합니다.
+5. 우측 패널의 **Headers(헤더)** 탭에서 스크롤을 내려 **Request Headers(요청 헤더)** 섹션을 찾습니다.
+6. **`Cookie:`** 항목의 값을 모두 복사합니다.
+7. 프로젝트의 `.env.local` 파일에 다음과 같이 붙여넣고 개발 서버를 재시작합니다.
+
+```env
+CURSOR_COOKIE_STRINGS="복사한_전체_쿠키_값"
+```

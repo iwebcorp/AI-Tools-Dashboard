@@ -8,16 +8,16 @@ const names: Record<ServiceId, string> = {
   openai: 'OpenAI',
   gemini: 'Gemini',
   cursor: 'Cursor',
-  claude: 'Claude',
   figma: 'Figma',
+  chatgpt: 'ChatGPT',
 };
 
 const colors: Record<ServiceId, string> = {
   openai: '#639922',
   gemini: '#185FA5',
   cursor: '#BA7517',
-  claude: '#7F77DD',
   figma: '#D85A30',
+  chatgpt: '#10A37F',
 };
 
 export function CostChart({ data }: { data: AllUsageResponse }) {

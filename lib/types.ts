@@ -1,4 +1,4 @@
-export type ServiceId = 'openai' | 'gemini' | 'cursor' | 'claude' | 'figma' | 'chatgpt';
+export type ServiceId = 'openai' | 'gemini' | 'cursor' | 'figma' | 'chatgpt';
 
 export type ErrorCode =
   | 'NOT_CONFIGURED'
@@ -67,7 +67,6 @@ export interface AllUsageResponse {
   openai: ServiceUsage;
   gemini: ServiceUsage;
   cursor: ServiceUsage;
-  claude: ServiceUsage;
   figma: ServiceUsage;
   chatgpt: ServiceUsage;
   fetchedAt: string;

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getCache, setCache } from '@/lib/cache';
-import { fetchClaudeUsage } from '@/lib/services/claudeService';
 import { fetchCursorUsage } from '@/lib/services/cursorService';
 import { fetchFigmaUsage } from '@/lib/services/figmaService';
 import { fetchGeminiUsage } from '@/lib/services/geminiService';
@@ -11,7 +10,6 @@ import type { AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
 const fetchers = {
   openai: fetchOpenaiUsage,
   gemini: fetchGeminiUsage,
-  claude: fetchClaudeUsage,
   figma: fetchFigmaUsage,
   chatgpt: fetchChatgptUsage,
 } satisfies Record<Exclude<ServiceId, 'cursor'>, () => Promise<ServiceUsage>>;
@@ -47,11 +45,10 @@ async function getServiceUsage(service: ServiceId, cursorRange: CursorRange): Pr
 
 export async function GET(request: Request) {
   const cursorRange = parseCursorRange(request);
-  const [openai, gemini, cursor, claude, figma, chatgpt] = await Promise.allSettled([
+  const [openai, gemini, cursor, figma, chatgpt] = await Promise.allSettled([
     getServiceUsage('openai', cursorRange),
     getServiceUsage('gemini', cursorRange),
     getServiceUsage('cursor', cursorRange),
-    getServiceUsage('claude', cursorRange),
     getServiceUsage('figma', cursorRange),
     getServiceUsage('chatgpt', cursorRange),
   ]);
@@ -72,7 +69,6 @@ export async function GET(request: Request) {
     openai: openai.status === 'fulfilled' ? openai.value : fallback('openai'),
     gemini: gemini.status === 'fulfilled' ? gemini.value : fallback('gemini'),
     cursor: cursor.status === 'fulfilled' ? cursor.value : fallback('cursor'),
-    claude: claude.status === 'fulfilled' ? claude.value : fallback('claude'),
     figma: figma.status === 'fulfilled' ? figma.value : fallback('figma'),
     chatgpt: chatgpt.status === 'fulfilled' ? chatgpt.value : fallback('chatgpt'),
     fetchedAt: new Date().toISOString(),

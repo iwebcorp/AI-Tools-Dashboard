@@ -1,7 +1,7 @@
-import type { ModelUsage, ServiceId } from '@/lib/types';
+import type { ErrorCode, ModelUsage, ServiceId } from '@/lib/types';
 import { formatCurrency, formatNum } from './format';
 
-export function ModelBreakdown({ models, serviceId }: { models: ModelUsage[]; serviceId: ServiceId }) {
+export function ModelBreakdown({ models, serviceId, error }: { models: ModelUsage[]; serviceId: ServiceId; error?: ErrorCode }) {
   if (models.length === 0) {
     return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">데이터 없음</div>;
   }
@@ -14,11 +14,11 @@ export function ModelBreakdown({ models, serviceId }: { models: ModelUsage[]; se
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-4 py-3">{serviceId === 'figma' ? '이벤트 타입' : '모델/분류'}</th>
-            <th className="px-4 py-3 text-right">요청 수</th>
+            <th className="px-4 py-3">{serviceId === 'figma' ? (error === 'PLAN_REQUIRED' ? '데이터 종류' : '이벤트 타입') : '모델/분류'}</th>
+            <th className="px-4 py-3 text-right">{serviceId === 'figma' && error === 'PLAN_REQUIRED' ? '개수' : '요청 수'}</th>
             {serviceId === 'figma' ? (
               <>
-                <th className="px-4 py-3 text-right">호출 수</th>
+                <th className="px-4 py-3 text-right">{error === 'PLAN_REQUIRED' ? '총계' : '호출 수'}</th>
                 <th className="px-4 py-3 text-right">비중</th>
               </>
             ) : (

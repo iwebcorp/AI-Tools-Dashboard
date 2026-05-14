@@ -4,23 +4,23 @@ import { useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { AccountUsage, AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
 import { formatCurrency, formatNum } from './format';
+const serviceIds: ServiceId[] = ['openai', 'gemini', 'cursor', 'figma', 'chatgpt'];
 
-const serviceIds: ServiceId[] = ['openai', 'gemini', 'cursor', 'claude', 'figma'];
-const serviceNames: Record<ServiceId, string> = {
+const names: Record<ServiceId, string> = {
   openai: 'OpenAI',
   gemini: 'Gemini',
   cursor: 'Cursor',
-  claude: 'Claude',
   figma: 'Figma',
+  chatgpt: 'ChatGPT',
 };
+
 const colors: Record<ServiceId, string> = {
   openai: '#639922',
   gemini: '#185FA5',
   cursor: '#BA7517',
-  claude: '#7F77DD',
   figma: '#D85A30',
+  chatgpt: '#10A37F',
 };
-
 interface DailyChartProps {
   data?: AllUsageResponse;
   service?: ServiceUsage;
@@ -33,8 +33,8 @@ export function DailyChart({ data, service, account }: DailyChartProps) {
     openai: true,
     gemini: true,
     cursor: true,
-    claude: true,
     figma: true,
+    chatgpt: true,
   });
 
   const rows = useMemo(() => {
@@ -86,7 +86,7 @@ export function DailyChart({ data, service, account }: DailyChartProps) {
                 onChange={(event) => setVisible((current) => ({ ...current, [id]: event.target.checked }))}
               />
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors[id] }} />
-              {serviceNames[id]}
+              {names[id]}
             </label>
           ))}
         </div>
