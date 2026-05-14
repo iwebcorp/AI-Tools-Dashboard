@@ -33,7 +33,8 @@
     "host_permissions": [
       "https://*.cursor.com/*",
       "https://*.chatgpt.com/*",
-      "http://localhost:3000/*"
+      "http://localhost:3000/*",
+      "https://ai-tools-dashboard-psi.vercel.app/*"
     ]
   }
 }
