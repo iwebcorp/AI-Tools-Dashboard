@@ -178,24 +178,25 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
     const projects = parsed.data.projects;
     const metas = await Promise.all(projects.map((project) => fetchProjectMeta(accessToken, project.id)));
     const projectDetails = buildProjectDetails(projects, metas);
-    let fileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
-
-    if (metas.every((meta) => !meta || meta.file_count === undefined)) {
-      fileCount = await fetchProjectFileCountFallback(accessToken, projects.map((project) => project.id));
-    }
+    const files = await fetchProjectFiles(accessToken, projects);
+    const metaFileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
+    const fileCount = metaFileCount || files.length;
 
     const today = dateKey();
     const projectsCreatedToday = metas.filter((meta) => meta?.created_at && dateKey(new Date(meta.created_at)) === today).length;
+    const filesUpdatedToday = files.filter((file) => file.lastModified && dateKey(new Date(file.lastModified)) === today).length;
     const snapshot = await updateProjectSnapshot(accountLabel, today, projects.map((project) => project.id));
     const figma: FigmaUsage = {
       accountLabel,
       projectCount: projects.length,
       fileCount,
       projectsCreatedToday,
+      filesUpdatedToday,
       projectDeltaFromPreviousSnapshot: snapshot.previous ? projects.length - snapshot.previous.projectCount : undefined,
       previousSnapshotDate: snapshot.previous?.date,
       snapshotDate: today,
       projects: projectDetails,
+      files,
     };
 
     return {
@@ -262,24 +263,25 @@ async function fetchProjectInsights(accessToken: string, teamId: string, account
   const projects = parsed.data.projects;
   const metas = await Promise.all(projects.map((project) => fetchProjectMeta(accessToken, project.id)));
   const projectDetails = buildProjectDetails(projects, metas);
-  let fileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
-
-  if (metas.every((meta) => !meta || meta.file_count === undefined)) {
-    fileCount = await fetchProjectFileCountFallback(accessToken, projects.map((project) => project.id));
-  }
+  const files = await fetchProjectFiles(accessToken, projects);
+  const metaFileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
+  const fileCount = metaFileCount || files.length;
 
   const today = dateKey();
   const projectsCreatedToday = metas.filter((meta) => meta?.created_at && dateKey(new Date(meta.created_at)) === today).length;
+  const filesUpdatedToday = files.filter((file) => file.lastModified && dateKey(new Date(file.lastModified)) === today).length;
   const snapshot = await updateProjectSnapshot(accountLabel, today, projects.map((project) => project.id));
   const figma: FigmaUsage = {
     accountLabel,
     projectCount: projects.length,
     fileCount,
     projectsCreatedToday,
+    filesUpdatedToday,
     projectDeltaFromPreviousSnapshot: snapshot.previous ? projects.length - snapshot.previous.projectCount : undefined,
     previousSnapshotDate: snapshot.previous?.date,
     snapshotDate: today,
     projects: projectDetails,
+    files,
   };
 
   return {
@@ -329,18 +331,34 @@ function buildProjectDetails(
     .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
 }
 
-async function fetchProjectFileCountFallback(accessToken: string, projectIds: string[]) {
-  let fileCount = 0;
-  for (const projectId of projectIds.slice(0, 20)) {
-    const filesResponse = await fetch(`https://api.figma.com/v1/projects/${projectId}/files`, {
+async function fetchProjectFiles(
+  accessToken: string,
+  projects: z.infer<typeof ProjectsSchema>['projects']
+): Promise<FigmaFile[]> {
+  const files: FigmaFile[] = [];
+  for (const project of projects) {
+    const filesResponse = await fetch(`https://api.figma.com/v1/projects/${project.id}/files`, {
       headers: { 'X-Figma-Token': accessToken },
       cache: 'no-store',
     });
     if (!filesResponse.ok) continue;
     const filesParsed = FilesSchema.safeParse(await filesResponse.json());
-    if (filesParsed.success) fileCount += filesParsed.data.files.length;
+    if (!filesParsed.success) continue;
+
+    for (const file of filesParsed.data.files) {
+      files.push({
+        key: file.key,
+        name: file.name ?? file.key,
+        projectId: project.id,
+        projectName: project.name ?? project.id,
+        thumbnailUrl: file.thumbnail_url,
+        lastModified: file.last_modified,
+        branchName: file.branch_name,
+      });
+    }
   }
-  return fileCount;
+
+  return files.sort((a, b) => (b.lastModified ?? '').localeCompare(a.lastModified ?? ''));
 }
 
 function dateKey(date = new Date()) {

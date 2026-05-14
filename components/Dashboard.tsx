@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AccountUsage, AllUsageResponse, FigmaProject, ServiceId, ServiceUsage } from '@/lib/types';
+import type { AccountUsage, AllUsageResponse, FigmaFile, FigmaProject, FigmaUsage, ServiceId, ServiceUsage } from '@/lib/types';
 import { useUsageData } from '@/hooks/useUsageData';
 import { CostChart } from './CostChart';
 import { DailyChart } from './DailyChart';
@@ -245,7 +245,7 @@ function ServiceDetail({
         />
       ) : null}
 
-      {isFigma && usage.figma?.projects.length ? <FigmaProjects projects={usage.figma.projects} /> : null}
+      {isFigma && usage.figma ? <FigmaFiles figma={usage.figma} /> : null}
 
       <ModelBreakdown
         models={selectedCursorAccount?.models ?? usage.models}
@@ -375,6 +375,91 @@ function CursorAccounts({
   );
 }
 
+function FigmaFiles({ figma }: { figma: FigmaUsage }) {
+  const today = dateInputValue(new Date());
+  const createdToday = figma.projectsCreatedToday ?? figma.projects.filter((project) => project.createdAt?.startsWith(today)).length;
+  const updatedToday = figma.filesUpdatedToday ?? figma.files.filter((file) => file.lastModified?.startsWith(today)).length;
+  const recentlyUpdated = figma.files[0];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-4">
+        <Metric label="총 프로젝트" value={formatNum(figma.projectCount)} />
+        <Metric label="총 파일" value={formatNum(figma.fileCount)} />
+        <Metric label="오늘 생성 프로젝트" value={formatNum(createdToday)} />
+        <Metric label="오늘 수정 파일" value={formatNum(updatedToday)} />
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-950">Figma 파일 현황</h2>
+            <p className="mt-1 text-xs text-slate-500">최근 수정 파일: {recentlyUpdated?.name ?? '-'}</p>
+          </div>
+          <span className="text-xs font-medium text-slate-500">수정일 최신순</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">파일</th>
+                <th className="px-4 py-3">프로젝트</th>
+                <th className="px-4 py-3">마지막 수정일</th>
+                <th className="px-4 py-3">상태</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {figma.files.length ? (
+                figma.files.map((file) => <FigmaFileRow key={file.key} file={file} today={today} />)
+              ) : (
+                <tr>
+                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={4}>
+                    표시할 파일 데이터가 없습니다
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FigmaFileRow({ file, today }: { file: FigmaFile; today: string }) {
+  const isUpdatedToday = file.lastModified?.startsWith(today);
+
+  return (
+    <tr className="hover:bg-slate-50">
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          {file.thumbnailUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={file.thumbnailUrl} alt="" className="h-9 w-12 rounded border border-slate-200 object-cover" />
+          ) : (
+            <div className="flex h-9 w-12 items-center justify-center rounded border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-400">
+              FG
+            </div>
+          )}
+          <div>
+            <div className="font-medium text-slate-900">{file.name}</div>
+            <div className="text-xs text-slate-400">{file.key}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-slate-700">
+        <div>{file.projectName}</div>
+        {file.branchName ? <div className="text-xs text-slate-400">{file.branchName}</div> : null}
+      </td>
+      <td className="px-4 py-3 text-slate-700">{formatIsoDate(file.lastModified)}</td>
+      <td className="px-4 py-3">
+        {isUpdatedToday ? <StatusBadge tone="blue">오늘 수정</StatusBadge> : <StatusBadge tone="slate">변동 없음</StatusBadge>}
+      </td>
+    </tr>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function FigmaProjects({ projects }: { projects: FigmaProject[] }) {
   const today = dateInputValue(new Date());
   const createdToday = projects.filter((project) => project.createdAt?.startsWith(today)).length;
