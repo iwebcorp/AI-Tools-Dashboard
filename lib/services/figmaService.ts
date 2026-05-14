@@ -234,8 +234,9 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
       dailyHistory: [],
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error('[Figma] Usage fetch failed:', error);
-    return emptyUsage('figma', 'UNKNOWN', 'Figma 사용량 조회 중 알 수 없는 오류가 발생했습니다.');
+    return emptyUsage('figma', 'UNKNOWN', `Figma 사용량 조회 중 오류가 발생했습니다: ${message}`);
   }
 }
 
@@ -362,8 +363,13 @@ async function fetchProjectFiles(
 }
 
 function dateKey(date = new Date()) {
+  if (isNaN(date.getTime())) return '0000-00-00';
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
+  try {
+    return local.toISOString().slice(0, 10);
+  } catch (e) {
+    return '0000-00-00';
+  }
 }
 
 async function updateProjectSnapshot(accountLabel: string, today: string, projectIds: string[]) {
