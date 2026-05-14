@@ -12,14 +12,14 @@ const fetchers = {
   gemini: fetchGeminiUsage,
   figma: fetchFigmaUsage,
   chatgpt: fetchChatgptUsage,
-} satisfies Record<Exclude<ServiceId, 'cursor'>, () => Promise<ServiceUsage>>;
+} satisfies Record<Exclude<ServiceId, 'cursor'>, (range?: UsageRange) => Promise<ServiceUsage>>;
 
-interface CursorRange {
+interface UsageRange {
   startDate?: number;
   endDate?: number;
 }
 
-function parseCursorRange(request: Request): CursorRange {
+function parseUsageRange(request: Request): UsageRange {
   const url = new URL(request.url);
   const start = url.searchParams.get('cursorStart');
   const end = url.searchParams.get('cursorEnd');
@@ -32,25 +32,27 @@ function parseCursorRange(request: Request): CursorRange {
   };
 }
 
-async function getServiceUsage(service: ServiceId, cursorRange: CursorRange): Promise<ServiceUsage> {
+async function getServiceUsage(service: ServiceId, usageRange: UsageRange): Promise<ServiceUsage> {
   const cacheKey =
-    service === 'cursor' ? `cursor:${cursorRange.startDate ?? 'default'}:${cursorRange.endDate ?? 'default'}` : service;
+    service === 'cursor' || service === 'figma' || service === 'chatgpt'
+      ? `${service}:${usageRange.startDate ?? 'default'}:${usageRange.endDate ?? 'default'}`
+      : service;
   const cached = getCache<ServiceUsage>(cacheKey);
   if (cached) return cached;
 
-  const data = service === 'cursor' ? await fetchCursorUsage(cursorRange) : await fetchers[service]();
+  const data = service === 'cursor' ? await fetchCursorUsage(usageRange) : await fetchers[service](usageRange);
   setCache(cacheKey, data);
   return data;
 }
 
 export async function GET(request: Request) {
-  const cursorRange = parseCursorRange(request);
+  const usageRange = parseUsageRange(request);
   const [openai, gemini, cursor, figma, chatgpt] = await Promise.allSettled([
-    getServiceUsage('openai', cursorRange),
-    getServiceUsage('gemini', cursorRange),
-    getServiceUsage('cursor', cursorRange),
-    getServiceUsage('figma', cursorRange),
-    getServiceUsage('chatgpt', cursorRange),
+    getServiceUsage('openai', usageRange),
+    getServiceUsage('gemini', usageRange),
+    getServiceUsage('cursor', usageRange),
+    getServiceUsage('figma', usageRange),
+    getServiceUsage('chatgpt', usageRange),
   ]);
 
   const fallback = (service: ServiceId): ServiceUsage => ({

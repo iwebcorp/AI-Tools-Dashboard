@@ -28,7 +28,7 @@ const colors: Record<ServiceId, string> = {
 
 type Tab = 'overview' | ServiceId;
 
-interface CursorRange {
+interface UsageRange {
   start: string;
   end: string;
 }
@@ -38,7 +38,7 @@ function dateInputValue(date: Date) {
   return local.toISOString().slice(0, 10);
 }
 
-function initialCursorRange(): CursorRange {
+function initialUsageRange(): UsageRange {
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   return {
@@ -49,10 +49,10 @@ function initialCursorRange(): CursorRange {
 
 export function Dashboard() {
   const [tab, setTab] = useState<Tab>('overview');
-  const [cursorRange, setCursorRange] = useState<CursorRange>(initialCursorRange);
+  const [usageRange, setUsageRange] = useState<UsageRange>(initialUsageRange);
   const { data, loading, refreshing, error, lastUpdated, refresh } = useUsageData({
-    cursorStart: cursorRange.start,
-    cursorEnd: cursorRange.end,
+    cursorStart: usageRange.start,
+    cursorEnd: usageRange.end,
   });
 
   if (loading && !data) {
@@ -123,8 +123,8 @@ export function Dashboard() {
             ) : (
               <ServiceDetail
                 usage={data[tab]}
-                cursorRange={cursorRange}
-                onCursorRangeChange={setCursorRange}
+                usageRange={usageRange}
+                onUsageRangeApply={setUsageRange}
               />
             )
           ) : null}
@@ -173,12 +173,12 @@ function Overview({ data }: { data: AllUsageResponse }) {
 
 function ServiceDetail({
   usage,
-  cursorRange,
-  onCursorRangeChange,
+  usageRange,
+  onUsageRangeApply,
 }: {
   usage: ServiceUsage;
-  cursorRange: CursorRange;
-  onCursorRangeChange: (range: CursorRange) => void;
+  usageRange: UsageRange;
+  onUsageRangeApply: (range: UsageRange) => void;
 }) {
   const isFigma = usage.service === 'figma';
   const isCursor = usage.service === 'cursor';
@@ -192,7 +192,7 @@ function ServiceDetail({
 
   return (
     <div className="mt-6 space-y-6">
-      {(isCursor || isFigma || isChatgpt) ? <CursorRangeControls range={cursorRange} onChange={onCursorRangeChange} /> : null}
+      {(isCursor || isFigma || isChatgpt) ? <UsageRangeControls range={usageRange} onApply={onUsageRangeApply} /> : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         {isCursor ? (
@@ -263,13 +263,16 @@ function ServiceDetail({
   );
 }
 
-function CursorRangeControls({
+function UsageRangeControls({
   range,
-  onChange,
+  onApply,
 }: {
-  range: CursorRange;
-  onChange: (range: CursorRange) => void;
+  range: UsageRange;
+  onApply: (range: UsageRange) => void;
 }) {
+  const [draft, setDraft] = useState(range);
+  const changed = draft.start !== range.start || draft.end !== range.end;
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-end gap-3">
@@ -278,9 +281,9 @@ function CursorRangeControls({
           <input
             type="date"
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950"
-            value={range.start}
-            max={range.end}
-            onChange={(event) => onChange({ ...range, start: event.target.value })}
+            value={draft.start}
+            max={draft.end}
+            onChange={(event) => setDraft({ ...draft, start: event.target.value })}
           />
         </label>
         <label className="grid gap-1 text-sm text-slate-600">
@@ -288,14 +291,21 @@ function CursorRangeControls({
           <input
             type="date"
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950"
-            value={range.end}
-            min={range.start}
-            onChange={(event) => onChange({ ...range, end: event.target.value })}
+            value={draft.end}
+            min={draft.start}
+            onChange={(event) => setDraft({ ...draft, end: event.target.value })}
           />
         </label>
         <button
+          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!changed}
+          onClick={() => onApply(draft)}
+        >
+          확인
+        </button>
+        <button
           className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          onClick={() => onChange(initialCursorRange())}
+          onClick={() => setDraft(initialUsageRange())}
         >
           이번 달
         </button>
