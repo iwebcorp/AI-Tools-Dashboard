@@ -168,12 +168,12 @@ function IndexPopup() {
         </button>
       </div>
 
-      <ServiceCard title="Cursor" service="cursor" state={state.cursor || {}} icon="🖱️" onSync={handleSyncService} />
+      <ServiceCard title="Cursor" service="cursor" state={state.cursor || {}} icon="C" onSync={handleSyncService} />
       <ServiceCard
         title="ChatGPT"
         service="chatgpt"
         state={state.chatgpt || {}}
-        icon="💬"
+        icon="G"
         onSync={handleSyncService}
       />
 
