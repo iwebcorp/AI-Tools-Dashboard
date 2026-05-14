@@ -1,9 +1,8 @@
 import 'server-only';
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { z } from 'zod';
 import type { DailyUsage, FigmaFile, FigmaProject, FigmaUsage, ModelUsage, ServiceUsage } from '@/lib/types';
+import { getRedis } from '@/lib/redis';
 import { emptyUsage } from './shared';
 
 const ActivityLogSchema = z.object({
@@ -64,8 +63,6 @@ const SnapshotSchema = z
     })
   )
   .default([]);
-
-const snapshotDir = path.join(process.cwd(), 'data', 'figma');
 
 export async function fetchFigmaUsage(options: { startDate?: number; endDate?: number } = {}): Promise<ServiceUsage> {
   const accessToken = process.env.FIGMA_ACCESS_TOKEN;
@@ -373,13 +370,17 @@ function dateKey(date = new Date()) {
 }
 
 async function updateProjectSnapshot(accountLabel: string, today: string, projectIds: string[]) {
-  const snapshotPath = projectSnapshotPath(accountLabel);
-  const snapshots = await readProjectSnapshots(snapshotPath);
+  const redis = getRedis();
+  const key = `figma:snapshots:${safeFileName(accountLabel)}`;
+  const data = await redis.get(key);
+  const snapshots = Array.isArray(data) ? data : [];
+
   const previous = [...snapshots]
-    .filter((snapshot) => snapshot.date < today)
+    .filter((snapshot: any) => snapshot.date < today)
     .sort((a, b) => b.date.localeCompare(a.date))[0];
+
   const next = [
-    ...snapshots.filter((snapshot) => snapshot.date !== today),
+    ...snapshots.filter((snapshot: any) => snapshot.date !== today),
     {
       date: today,
       projectCount: projectIds.length,
@@ -387,29 +388,12 @@ async function updateProjectSnapshot(accountLabel: string, today: string, projec
     },
   ].sort((a, b) => a.date.localeCompare(b.date));
 
-  await writeProjectSnapshots(snapshotPath, next);
-  return { previous };
-}
+  const trimmed = next.slice(-30);
+  await redis.set(key, trimmed);
 
-function projectSnapshotPath(accountLabel: string) {
-  return path.join(snapshotDir, `${safeFileName(accountLabel)}-project-snapshots.json`);
+  return { previous };
 }
 
 function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'default';
-}
-
-async function readProjectSnapshots(snapshotPath: string) {
-  try {
-    const json = await readFile(snapshotPath, 'utf8');
-    const parsed = SnapshotSchema.safeParse(JSON.parse(json));
-    return parsed.success ? parsed.data : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeProjectSnapshots(snapshotPath: string, snapshots: z.infer<typeof SnapshotSchema>) {
-  await mkdir(path.dirname(snapshotPath), { recursive: true });
-  await writeFile(snapshotPath, `${JSON.stringify(snapshots, null, 2)}\n`);
 }
