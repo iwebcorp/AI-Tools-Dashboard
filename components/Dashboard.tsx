@@ -201,14 +201,7 @@ function ServiceDetail({
             <Metric label="선택 기간 총 토큰" value={formatNum(usage.tokens.total)} />
             <Metric label="선택 기간 요청 수" value={formatNum(usage.requests)} />
           </>
-        ) : isFigma ? (
-          <>
-            <Metric label="총 파일" value={formatNum(usage.figma?.fileCount ?? usage.tokens.total)} />
-            <Metric label="총 프로젝트" value={formatNum(usage.figma?.projectCount ?? 0)} />
-            <Metric label="API 기준 오늘 생성 프로젝트" value={formatNum(usage.figma?.projectsCreatedToday ?? 0)} />
-            <Metric label="접근 가능한 파일 중 오늘 수정" value={formatNum(usage.figma?.filesUpdatedToday ?? 0)} />
-          </>
-        ) : usage.service === 'chatgpt' ? (
+        ) : isFigma ? null : usage.service === 'chatgpt' ? (
           <>
             <Metric label="총 요청 수" value={formatNum(usage.requests)} />
             <Metric label="총 입력 토큰" value={formatNum(usage.tokens.input)} />
@@ -477,4 +470,3 @@ function Metric({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
