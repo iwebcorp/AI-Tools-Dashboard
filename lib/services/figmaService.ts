@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
-import type { DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
+import type { DailyUsage, FigmaUsage, ModelUsage, ServiceUsage } from '@/lib/types';
 import { emptyUsage } from './shared';
 
 const ActivityLogSchema = z.object({
@@ -18,26 +20,63 @@ const ActivityLogSchema = z.object({
 });
 
 const ProjectsSchema = z.object({
-  projects: z.array(z.object({ id: z.string(), name: z.string().optional() })).default([]),
+  projects: z
+    .array(
+      z.object({
+        id: z.union([z.string(), z.number()]).transform(String),
+        name: z.string().optional(),
+      })
+    )
+    .default([]),
 });
 
 const FilesSchema = z.object({
   files: z.array(z.object({ key: z.string(), name: z.string().optional() })).default([]),
 });
 
+const ProjectMetaSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  name: z.string().optional(),
+  file_count: z.number().optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+});
+
+const SnapshotSchema = z
+  .array(
+    z.object({
+      date: z.string(),
+      projectCount: z.number(),
+      projectIds: z.array(z.string()).default([]),
+    })
+  )
+  .default([]);
+
+const snapshotDir = path.join(process.cwd(), 'data', 'figma');
+
 export async function fetchFigmaUsage(options: { startDate?: number; endDate?: number } = {}): Promise<ServiceUsage> {
   const accessToken = process.env.FIGMA_ACCESS_TOKEN;
   const teamId = process.env.FIGMA_TEAM_ID;
+  const accountLabel = process.env.FIGMA_ACCOUNT_LABEL || `team-${teamId}`;
   if (!accessToken || !teamId) {
     return emptyUsage('figma', 'NOT_CONFIGURED', 'FIGMA_ACCESS_TOKEN과 FIGMA_TEAM_ID가 필요합니다.');
   }
 
   if (process.env.FIGMA_OAUTH_TOKEN) {
     const enterprise = await fetchActivityLogs(process.env.FIGMA_OAUTH_TOKEN, options);
-    if (enterprise) return enterprise;
+    if (enterprise) {
+      const projectInsights = await fetchProjectInsights(accessToken, teamId, accountLabel);
+      if (!projectInsights) return enterprise;
+
+      return {
+        ...enterprise,
+        figma: projectInsights.figma,
+        models: [...enterprise.models, ...projectInsights.models],
+      };
+    }
   }
 
-  return fetchProjectFallback(accessToken, teamId);
+  return fetchProjectFallback(accessToken, teamId, accountLabel);
 }
 
 async function fetchActivityLogs(oauthToken: string, options: { startDate?: number; endDate?: number }): Promise<ServiceUsage | null> {
@@ -104,7 +143,7 @@ async function fetchActivityLogs(oauthToken: string, options: { startDate?: numb
   };
 }
 
-async function fetchProjectFallback(accessToken: string, teamId: string): Promise<ServiceUsage> {
+async function fetchProjectFallback(accessToken: string, teamId: string, accountLabel: string): Promise<ServiceUsage> {
   try {
     const response = await fetch(`https://api.figma.com/v1/teams/${teamId}/projects`, {
       headers: { 'X-Figma-Token': accessToken },
@@ -123,16 +162,26 @@ async function fetchProjectFallback(accessToken: string, teamId: string): Promis
       return emptyUsage('figma', 'SCHEMA_CHANGED', 'Figma Projects API 응답 구조가 변경되었습니다.');
     }
 
-    let fileCount = 0;
-    for (const project of parsed.data.projects.slice(0, 20)) {
-      const filesResponse = await fetch(`https://api.figma.com/v1/projects/${project.id}/files`, {
-        headers: { 'X-Figma-Token': accessToken },
-        cache: 'no-store',
-      });
-      if (!filesResponse.ok) continue;
-      const filesParsed = FilesSchema.safeParse(await filesResponse.json());
-      if (filesParsed.success) fileCount += filesParsed.data.files.length;
+    const projects = parsed.data.projects;
+    const metas = await Promise.all(projects.map((project) => fetchProjectMeta(accessToken, project.id)));
+    let fileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
+
+    if (metas.every((meta) => !meta || meta.file_count === undefined)) {
+      fileCount = await fetchProjectFileCountFallback(accessToken, projects.map((project) => project.id));
     }
+
+    const today = dateKey();
+    const projectsCreatedToday = metas.filter((meta) => meta?.created_at && dateKey(new Date(meta.created_at)) === today).length;
+    const snapshot = await updateProjectSnapshot(accountLabel, today, projects.map((project) => project.id));
+    const figma: FigmaUsage = {
+      accountLabel,
+      projectCount: projects.length,
+      fileCount,
+      projectsCreatedToday,
+      projectDeltaFromPreviousSnapshot: snapshot.previous ? projects.length - snapshot.previous.projectCount : undefined,
+      previousSnapshotDate: snapshot.previous?.date,
+      snapshotDate: today,
+    };
 
     return {
       service: 'figma',
@@ -142,7 +191,22 @@ async function fetchProjectFallback(accessToken: string, teamId: string): Promis
       cost: { today: 0, thisMonth: 0 },
       tokens: { input: 0, output: 0, total: fileCount },
       requests: fileCount,
+      figma,
       models: [
+        {
+          model: 'projects',
+          inputTokens: 0,
+          outputTokens: 0,
+          cost: 0,
+          requests: projects.length,
+        },
+        {
+          model: 'projects_created_today',
+          inputTokens: 0,
+          outputTokens: 0,
+          cost: 0,
+          requests: projectsCreatedToday,
+        },
         {
           model: 'project_files',
           inputTokens: 0,
@@ -157,4 +221,135 @@ async function fetchProjectFallback(accessToken: string, teamId: string): Promis
     console.error('[Figma] Usage fetch failed:', error);
     return emptyUsage('figma', 'UNKNOWN', 'Figma 사용량 조회 중 알 수 없는 오류가 발생했습니다.');
   }
+}
+
+async function fetchProjectMeta(accessToken: string, projectId: string) {
+  const response = await fetch(`https://api.figma.com/v1/projects/${projectId}/meta`, {
+    headers: { 'X-Figma-Token': accessToken },
+    cache: 'no-store',
+  });
+  if (!response.ok) return null;
+
+  const parsed = ProjectMetaSchema.safeParse(await response.json());
+  return parsed.success ? parsed.data : null;
+}
+
+async function fetchProjectInsights(accessToken: string, teamId: string, accountLabel: string) {
+  const response = await fetch(`https://api.figma.com/v1/teams/${teamId}/projects`, {
+    headers: { 'X-Figma-Token': accessToken },
+    cache: 'no-store',
+  });
+  if (!response.ok) return null;
+
+  const parsed = ProjectsSchema.safeParse(await response.json());
+  if (!parsed.success) return null;
+
+  const projects = parsed.data.projects;
+  const metas = await Promise.all(projects.map((project) => fetchProjectMeta(accessToken, project.id)));
+  let fileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
+
+  if (metas.every((meta) => !meta || meta.file_count === undefined)) {
+    fileCount = await fetchProjectFileCountFallback(accessToken, projects.map((project) => project.id));
+  }
+
+  const today = dateKey();
+  const projectsCreatedToday = metas.filter((meta) => meta?.created_at && dateKey(new Date(meta.created_at)) === today).length;
+  const snapshot = await updateProjectSnapshot(accountLabel, today, projects.map((project) => project.id));
+  const figma: FigmaUsage = {
+    accountLabel,
+    projectCount: projects.length,
+    fileCount,
+    projectsCreatedToday,
+    projectDeltaFromPreviousSnapshot: snapshot.previous ? projects.length - snapshot.previous.projectCount : undefined,
+    previousSnapshotDate: snapshot.previous?.date,
+    snapshotDate: today,
+  };
+
+  return {
+    figma,
+    models: [
+      {
+        model: 'projects',
+        inputTokens: 0,
+        outputTokens: 0,
+        cost: 0,
+        requests: projects.length,
+      },
+      {
+        model: 'projects_created_today',
+        inputTokens: 0,
+        outputTokens: 0,
+        cost: 0,
+        requests: projectsCreatedToday,
+      },
+      {
+        model: 'project_files',
+        inputTokens: 0,
+        outputTokens: 0,
+        cost: 0,
+        requests: fileCount,
+      },
+    ],
+  };
+}
+
+async function fetchProjectFileCountFallback(accessToken: string, projectIds: string[]) {
+  let fileCount = 0;
+  for (const projectId of projectIds.slice(0, 20)) {
+    const filesResponse = await fetch(`https://api.figma.com/v1/projects/${projectId}/files`, {
+      headers: { 'X-Figma-Token': accessToken },
+      cache: 'no-store',
+    });
+    if (!filesResponse.ok) continue;
+    const filesParsed = FilesSchema.safeParse(await filesResponse.json());
+    if (filesParsed.success) fileCount += filesParsed.data.files.length;
+  }
+  return fileCount;
+}
+
+function dateKey(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+async function updateProjectSnapshot(accountLabel: string, today: string, projectIds: string[]) {
+  const snapshotPath = projectSnapshotPath(accountLabel);
+  const snapshots = await readProjectSnapshots(snapshotPath);
+  const previous = [...snapshots]
+    .filter((snapshot) => snapshot.date < today)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  const next = [
+    ...snapshots.filter((snapshot) => snapshot.date !== today),
+    {
+      date: today,
+      projectCount: projectIds.length,
+      projectIds,
+    },
+  ].sort((a, b) => a.date.localeCompare(b.date));
+
+  await writeProjectSnapshots(snapshotPath, next);
+  return { previous };
+}
+
+function projectSnapshotPath(accountLabel: string) {
+  return path.join(snapshotDir, `${safeFileName(accountLabel)}-project-snapshots.json`);
+}
+
+function safeFileName(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'default';
+}
+
+async function readProjectSnapshots(snapshotPath: string) {
+  try {
+    const json = await readFile(snapshotPath, 'utf8');
+    const parsed = SnapshotSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeProjectSnapshots(snapshotPath: string, snapshots: z.infer<typeof SnapshotSchema>) {
+  await mkdir(path.dirname(snapshotPath), { recursive: true });
+  await writeFile(snapshotPath, `${JSON.stringify(snapshots, null, 2)}\n`);
 }

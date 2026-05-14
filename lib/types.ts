@@ -29,6 +29,17 @@ export interface ServiceUsage {
   models: ModelUsage[];
   dailyHistory: DailyUsage[];
   accounts?: AccountUsage[];
+  figma?: FigmaUsage;
+}
+
+export interface FigmaUsage {
+  accountLabel: string;
+  projectCount: number;
+  fileCount: number;
+  projectsCreatedToday?: number;
+  projectDeltaFromPreviousSnapshot?: number;
+  previousSnapshotDate?: string;
+  snapshotDate: string;
 }
 
 export interface AccountUsage {

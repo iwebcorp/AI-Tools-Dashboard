@@ -1,7 +1,15 @@
 import 'server-only';
 
-import type { ServiceUsage } from '@/lib/types';
+import type { DailyUsage, ModelUsage, ServiceUsage } from '@/lib/types';
 import { emptyUsage } from './shared';
+
+type JsonObject = Record<string, unknown>;
+
+interface SurfaceUsage {
+  inputTokens: number;
+  outputTokens: number;
+  requests: number;
+}
 
 export async function fetchChatgptUsage(options: { startDate?: number; endDate?: number } = {}): Promise<ServiceUsage> {
   const cookies = process.env.CHATGPT_COOKIES;
@@ -72,53 +80,116 @@ export async function fetchChatgptUsage(options: { startDate?: number; endDate?:
     const startDateStr = formatDate(start);
     const endDateStr = formatDate(end);
     
-    const usageRes = await fetch(`https://chatgpt.com/backend-api/wham/usage/daily-token-usage-breakdown?start_date=${startDateStr}&end_date=${endDateStr}&group_by=day`, { headers, cache: 'no-store' });
+    const usageRes = await fetch(`https://chatgpt.com/backend-api/wham/analytics/daily-workspace-usage-counts?start_date=${startDateStr}&end_date=${endDateStr}&group_by=day`, { headers, cache: 'no-store' });
     
     if (usageRes.status === 401 || usageRes.status === 403) {
       return emptyUsage('chatgpt', 'SESSION_EXPIRED', 'ChatGPT Bearer Token 또는 Cookie가 만료되었습니다.');
     }
 
     if (usageRes.ok) {
-      const usageData = await usageRes.json();
-      const buckets = usageData.data || [];
+      const usageData = (await usageRes.json()) as unknown;
+      const buckets = getArray(getObject(usageData)?.data);
       
-      let totalCli = 0;
-      let totalWeb = 0;
+      let cliUsage: SurfaceUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
+      let webUsage: SurfaceUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
 
-      totals.dailyHistory = buckets.map((bucket: any) => {
-        const date = bucket.date;
-        const vals = bucket.product_surface_usage_values || {};
-        const cliTokens = vals.cli || 0;
-        const webTokens = vals.web || 0;
+      totals.dailyHistory = buckets.map((bucket) => {
+        const bucketObject = getObject(bucket) ?? {};
+        const date = String(bucketObject.date ?? bucketObject.start_date ?? bucketObject.day ?? new Date().toISOString().slice(0, 10));
+        const clients = getArray(bucketObject.clients);
+        const dailyCli = clients
+          .map(getObject)
+          .filter(isCodexCliClient)
+          .reduce<SurfaceUsage>((sum, client) => addSurfaceUsage(sum, readWorkspaceUsage(client)), { inputTokens: 0, outputTokens: 0, requests: 0 });
+        const dailyTotal = readWorkspaceUsage(getObject(bucketObject.totals) ?? bucketObject);
+        const dailyWeb = subtractSurfaceUsage(dailyTotal, dailyCli);
         
-        totalCli += cliTokens;
-        totalWeb += webTokens;
+        cliUsage = addSurfaceUsage(cliUsage, dailyCli);
+        webUsage = addSurfaceUsage(webUsage, dailyWeb);
 
         return {
           date,
-          inputTokens: cliTokens + webTokens,
-          outputTokens: 0,
-          requests: 0,
+          inputTokens: dailyCli.inputTokens + dailyWeb.inputTokens,
+          outputTokens: dailyCli.outputTokens + dailyWeb.outputTokens,
+          requests: dailyCli.requests + dailyWeb.requests,
           cost: 0 
-        };
+        } satisfies DailyUsage;
       });
 
-      totals.tokens.total = totalCli + totalWeb;
-      totals.tokens.input = totalCli + totalWeb; 
+      totals.tokens.input = cliUsage.inputTokens + webUsage.inputTokens;
+      totals.tokens.output = cliUsage.outputTokens + webUsage.outputTokens;
+      totals.tokens.total = totals.tokens.input + totals.tokens.output;
+      totals.requests = cliUsage.requests + webUsage.requests;
       
-      totals.models[0].inputTokens = totalWeb; // Web
-      totals.models[1].inputTokens = totalCli; // Codex CLI
+      totals.models[0] = applySurfaceUsage(totals.models[0], webUsage);
+      totals.models[1] = applySurfaceUsage(totals.models[1], cliUsage);
       
     } else {
       console.error('[ChatGPT] Wham API error:', usageRes.status);
     }
 
     // 빈 모델 제거
-    totals.models = totals.models.filter(m => m.requests > 0 || m.inputTokens > 0);
+    totals.models = totals.models.filter(m => m.requests > 0 || m.inputTokens > 0 || m.outputTokens > 0);
 
     return totals;
   } catch (error) {
     console.error('[ChatGPT] Fetch error:', error);
     return emptyUsage('chatgpt', 'UNKNOWN', 'ChatGPT 데이터를 가져오는 중 오류가 발생했습니다.');
   }
+}
+
+function getObject(value: unknown): JsonObject | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
+}
+
+function getArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function isCodexCliClient(value: JsonObject | null): value is JsonObject {
+  return value !== null && String(value.client_id ?? '') === 'CODEX_CLI';
+}
+
+function numberValue(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/,/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function addSurfaceUsage(left: SurfaceUsage, right: SurfaceUsage): SurfaceUsage {
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    requests: left.requests + right.requests,
+  };
+}
+
+function subtractSurfaceUsage(left: SurfaceUsage, right: SurfaceUsage): SurfaceUsage {
+  return {
+    inputTokens: Math.max(left.inputTokens - right.inputTokens, 0),
+    outputTokens: Math.max(left.outputTokens - right.outputTokens, 0),
+    requests: Math.max(left.requests - right.requests, 0),
+  };
+}
+
+function applySurfaceUsage(model: ModelUsage, usage: SurfaceUsage): ModelUsage {
+  return {
+    ...model,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    requests: usage.requests || model.requests,
+  };
+}
+
+function readWorkspaceUsage(value: JsonObject): SurfaceUsage {
+  return {
+    inputTokens:
+      numberValue(value.uncached_text_input_tokens ?? value.uncachedTextInputTokens) +
+      numberValue(value.cached_text_input_tokens ?? value.cachedTextInputTokens),
+    outputTokens: numberValue(value.text_output_tokens ?? value.textOutputTokens ?? value.output_tokens ?? value.outputTokens),
+    requests: numberValue(value.turns ?? value.requests ?? value.request_count ?? value.requestCount),
+  };
 }
