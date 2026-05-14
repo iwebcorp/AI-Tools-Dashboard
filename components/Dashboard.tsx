@@ -182,13 +182,14 @@ function ServiceDetail({
 }) {
   const isFigma = usage.service === 'figma';
   const isCursor = usage.service === 'cursor';
+  const isChatgpt = usage.service === 'chatgpt';
   const [selectedCursorAccountIndex, setSelectedCursorAccountIndex] = useState<number | null>(null);
   const selectedCursorAccount =
     isCursor && selectedCursorAccountIndex !== null ? usage.accounts?.[selectedCursorAccountIndex] : undefined;
 
   return (
     <div className="mt-6 space-y-6">
-      {isCursor ? <CursorRangeControls range={cursorRange} onChange={onCursorRangeChange} /> : null}
+      {(isCursor || isFigma || isChatgpt) ? <CursorRangeControls range={cursorRange} onChange={onCursorRangeChange} /> : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         {isCursor ? (
