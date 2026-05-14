@@ -5,6 +5,7 @@ import { fetchCursorUsage } from '@/lib/services/cursorService';
 import { fetchFigmaUsage } from '@/lib/services/figmaService';
 import { fetchGeminiUsage } from '@/lib/services/geminiService';
 import { fetchOpenaiUsage } from '@/lib/services/openaiService';
+import { fetchChatgptUsage } from '@/lib/services/chatgptService';
 import type { AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
 
 const fetchers = {
@@ -12,6 +13,7 @@ const fetchers = {
   gemini: fetchGeminiUsage,
   claude: fetchClaudeUsage,
   figma: fetchFigmaUsage,
+  chatgpt: fetchChatgptUsage,
 } satisfies Record<Exclude<ServiceId, 'cursor'>, () => Promise<ServiceUsage>>;
 
 interface CursorRange {
@@ -45,12 +47,13 @@ async function getServiceUsage(service: ServiceId, cursorRange: CursorRange): Pr
 
 export async function GET(request: Request) {
   const cursorRange = parseCursorRange(request);
-  const [openai, gemini, cursor, claude, figma] = await Promise.allSettled([
+  const [openai, gemini, cursor, claude, figma, chatgpt] = await Promise.allSettled([
     getServiceUsage('openai', cursorRange),
     getServiceUsage('gemini', cursorRange),
     getServiceUsage('cursor', cursorRange),
     getServiceUsage('claude', cursorRange),
     getServiceUsage('figma', cursorRange),
+    getServiceUsage('chatgpt', cursorRange),
   ]);
 
   const fallback = (service: ServiceId): ServiceUsage => ({
@@ -71,6 +74,7 @@ export async function GET(request: Request) {
     cursor: cursor.status === 'fulfilled' ? cursor.value : fallback('cursor'),
     claude: claude.status === 'fulfilled' ? claude.value : fallback('claude'),
     figma: figma.status === 'fulfilled' ? figma.value : fallback('figma'),
+    chatgpt: chatgpt.status === 'fulfilled' ? chatgpt.value : fallback('chatgpt'),
     fetchedAt: new Date().toISOString(),
   };
 

@@ -10,13 +10,14 @@ import { ModelBreakdown } from './ModelBreakdown';
 import { ServiceCard } from './ServiceCard';
 import { TokenGauge } from './TokenGauge';
 
-const serviceIds: ServiceId[] = ['openai', 'gemini', 'cursor', 'claude', 'figma'];
+const serviceIds: ServiceId[] = ['openai', 'gemini', 'cursor', 'claude', 'figma', 'chatgpt'];
 const serviceNames: Record<ServiceId, string> = {
   openai: 'OpenAI',
   gemini: 'Gemini',
   cursor: 'Cursor',
   claude: 'Claude',
   figma: 'Figma',
+  chatgpt: 'ChatGPT',
 };
 const colors: Record<ServiceId, string> = {
   openai: '#639922',
@@ -24,6 +25,7 @@ const colors: Record<ServiceId, string> = {
   cursor: '#BA7517',
   claude: '#7F77DD',
   figma: '#D85A30',
+  chatgpt: '#10A37F',
 };
 
 type Tab = 'overview' | ServiceId;
@@ -76,7 +78,7 @@ export function Dashboard() {
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">AI 사용량 대시보드</h1>
-            <p className="mt-1 text-sm text-slate-500">OpenAI, Gemini, Cursor, Claude, Figma 사용량 모니터링</p>
+            <p className="mt-1 text-sm text-slate-500">OpenAI, Gemini, Cursor, Claude, Figma, ChatGPT 사용량 모니터링</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-slate-500">마지막 업데이트 {formatDateTime(lastUpdated)}</span>
@@ -133,7 +135,7 @@ function Overview({ data }: { data: AllUsageResponse }) {
       <div className="grid gap-4 md:grid-cols-3">
         <Metric label="이번 달 총 비용" value={formatCurrency(totalCost)} />
         <Metric label="총 토큰/API 호출" value={formatNum(totalTokens)} />
-        <Metric label="활성 서비스" value={`${active}/5`} />
+        <Metric label="활성 서비스" value={`${active}/6`} />
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {serviceIds.map((id) => (
@@ -142,7 +144,7 @@ function Overview({ data }: { data: AllUsageResponse }) {
             label={serviceNames[id]}
             used={data[id].tokens.total}
             color={colors[id]}
-            unit={id === 'figma' ? '호출' : '토큰'}
+            unit={id === 'figma' ? '호출' : id === 'chatgpt' ? '대화' : '토큰'}
           />
         ))}
       </div>
@@ -192,6 +194,13 @@ function ServiceDetail({
             <Metric label="코드 생성 호출 수" value={formatNum(usage.models.find((item) => item.model === 'code_generation')?.requests ?? 0)} />
             <Metric label="이번 달 비용" value={formatCurrency(usage.cost.thisMonth)} />
             <Metric label="요청 수" value={formatNum(usage.requests)} />
+          </>
+        ) : usage.service === 'chatgpt' ? (
+          <>
+            <Metric label="총 대화 수" value={formatNum(usage.requests)} />
+            <Metric label="최근 대화 횟수" value={formatNum(usage.dailyHistory.find(d => d.date === new Date().toISOString().slice(0, 10))?.requests ?? 0)} />
+            <Metric label="플랜" value="ChatGPT Plus" />
+            <Metric label="비용" value="구독 포함" />
           </>
         ) : (
           <>

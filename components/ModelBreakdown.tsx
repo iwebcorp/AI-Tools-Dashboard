@@ -15,6 +15,7 @@ export function ModelBreakdown({ models, serviceId }: { models: ModelUsage[]; se
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-3">{serviceId === 'figma' ? '이벤트 타입' : '모델/분류'}</th>
+            <th className="px-4 py-3 text-right">요청 수</th>
             {serviceId === 'figma' ? (
               <>
                 <th className="px-4 py-3 text-right">호출 수</th>
@@ -37,6 +38,7 @@ export function ModelBreakdown({ models, serviceId }: { models: ModelUsage[]; se
             return (
               <tr key={item.model}>
                 <td className="px-4 py-3 font-medium text-slate-900">{item.model}</td>
+                <td className="px-4 py-3 text-right text-slate-700">{formatNum(item.requests)}</td>
                 {serviceId === 'figma' ? (
                   <>
                     <td className="px-4 py-3 text-right text-slate-700">{formatNum(item.requests)}</td>

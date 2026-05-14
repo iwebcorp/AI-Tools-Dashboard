@@ -28,8 +28,17 @@ export function toUnixSeconds(date: Date): number {
   return Math.floor(date.getTime() / 1000);
 }
 
-export function dateKeyFromUnix(seconds: number): string {
-  return new Date(seconds * 1000).toISOString().slice(0, 10);
+export function dateKeyFromUnix(val: number | string): string {
+  try {
+    const date = typeof val === 'number' 
+      ? new Date(val * (val > 10000000000 ? 1 : 1000)) // 밀리초인지 초인지 자동 판별
+      : new Date(val);
+    
+    if (isNaN(date.getTime())) throw new Error('Invalid date');
+    return date.toISOString().slice(0, 10);
+  } catch (e) {
+    return new Date().toISOString().slice(0, 10); // 실패 시 오늘 날짜로 대체
+  }
 }
 
 export function todayKey(): string {

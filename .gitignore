@@ -44,3 +44,6 @@ data/
 next-env.d.ts
 
 *.md
+*.log
+.log*
+*.mjs
