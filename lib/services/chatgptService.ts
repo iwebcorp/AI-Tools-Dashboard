@@ -46,7 +46,8 @@ export async function fetchChatgptUsage(options: { startDate?: number; endDate?:
   const { cookies, bearer: bearerToken, session } = await getChatgptAuth();
   
   if (!cookies || !bearerToken) {
-    return emptyUsage('chatgpt', 'NOT_CONFIGURED', 'ChatGPT 세션이 동기화되지 않았거나 설정이 필요합니다.');
+    const missing = !cookies && !bearerToken ? 'Cookie와 Bearer Token' : (!cookies ? 'Cookie' : 'Bearer Token');
+    return emptyUsage('chatgpt', 'NOT_CONFIGURED', `ChatGPT ${missing}이 동기화되지 않았습니다. ChatGPT에 로그인한 상태에서 확장 프로그램을 통해 다시 동기화해주세요.`);
   }
 
   const totals: ServiceUsage = {

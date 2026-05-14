@@ -14,6 +14,7 @@ interface SyncState {
   lastAttemptAt?: string
   lastSyncedAt?: string
   lastError?: string
+  lastBearer?: string // ChatGPT 토큰 보관용
 }
 
 function getStorageKey(service: "cursor" | "chatgpt") {
@@ -123,6 +124,13 @@ async function syncChatgptSession(bearer?: string, force = false) {
   console.log(`[Sync-ChatGPT] Starting sync process (force=${force}) at`, now)
   
   try {
+    const key = getStorageKey("chatgpt")
+    const currentStorage = await chrome.storage.local.get(key)
+    const state = (currentStorage[key] as SyncState | undefined) ?? {}
+    
+    // 전달된 bearer가 없으면 기존 저장된 bearer 사용
+    let finalBearer = bearer || state.lastBearer
+    
     await setState("chatgpt", { lastAttemptAt: now, lastError: undefined })
     
     if (!syncUrl || !syncSecret) {
@@ -138,13 +146,32 @@ async function syncChatgptSession(bearer?: string, force = false) {
       return
     }
 
-    const nextHash = simpleHash(cookieHeader + (bearer || ""))
-    const current = await chrome.storage.local.get(chatgptStorageKey)
-    const state = (current[chatgptStorageKey] as SyncState | undefined) ?? {}
+    // bearer가 없으면 직접 세션 API 호출 시도
+    if (!finalBearer) {
+      console.log("[Sync-ChatGPT] No bearer provided, attempting to fetch from session API...")
+      try {
+        const sessionRes = await fetch("https://chatgpt.com/api/auth/session")
+        if (sessionRes.ok) {
+          const sessionData = await sessionRes.json()
+          if (sessionData.accessToken) {
+            finalBearer = sessionData.accessToken
+            console.log("[Sync-ChatGPT] Successfully fetched bearer token from session API")
+          }
+        }
+      } catch (e) {
+        console.error("[Sync-ChatGPT] Failed to fetch session:", e)
+      }
+    }
+
+    const nextHash = simpleHash(cookieHeader + (finalBearer || ""))
     
     if (!force && state.lastCookieHash === nextHash) {
       console.log("[Sync-ChatGPT] No change, skipping upload")
       return
+    }
+
+    if (!finalBearer) {
+      console.warn("[Sync-ChatGPT] No bearer token available. Sync might be incomplete.")
     }
 
     const response = await fetch(syncUrl, {
@@ -156,7 +183,7 @@ async function syncChatgptSession(bearer?: string, force = false) {
       body: JSON.stringify({
         service: "chatgpt",
         cookies: cookieHeader,
-        bearer: bearer || undefined,
+        bearer: finalBearer || undefined,
         userAgent: navigator.userAgent,
         updatedAt: now
       })
@@ -171,9 +198,10 @@ async function syncChatgptSession(bearer?: string, force = false) {
     await setState("chatgpt", {
       lastCookieHash: nextHash,
       lastSyncedAt: now,
-      lastError: undefined
+      lastError: undefined,
+      lastBearer: finalBearer // 성공 시 토큰 보관
     })
-    console.log("[Sync-ChatGPT] Successfully synced")
+    console.log("[Sync-ChatGPT] Successfully synced (with bearer: " + (finalBearer ? "YES" : "NO") + ")")
   } catch (err) {
     console.error("[Sync-ChatGPT] Error:", err)
     await setState("chatgpt", { lastError: String(err) })

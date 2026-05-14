@@ -29,7 +29,20 @@ function extractBearerToken(): string | null {
 }
 
 async function syncSession() {
-  const token = extractBearerToken()
+  let token = extractBearerToken()
+  
+  if (!token) {
+    try {
+      const res = await fetch("/api/auth/session")
+      if (res.ok) {
+        const data = await res.json()
+        token = data.accessToken
+      }
+    } catch (e) {
+      console.error("[ChatGPT-CS] Failed to fetch session API:", e)
+    }
+  }
+
   if (!token) {
     console.log("[ChatGPT-CS] Bearer token not found yet")
     return
