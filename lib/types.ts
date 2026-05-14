@@ -64,6 +64,7 @@ export interface ModelUsage {
   outputTokens: number;
   cost: number;
   requests: number;
+  dailyHistory?: DailyUsage[];
 }
 
 export interface DailyUsage {

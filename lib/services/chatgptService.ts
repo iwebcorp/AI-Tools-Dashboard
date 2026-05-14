@@ -92,6 +92,8 @@ export async function fetchChatgptUsage(options: { startDate?: number; endDate?:
       
       let cliUsage: SurfaceUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
       let webUsage: SurfaceUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
+      const cliDailyHistory: DailyUsage[] = [];
+      const webDailyHistory: DailyUsage[] = [];
 
       totals.dailyHistory = buckets.map((bucket) => {
         const bucketObject = getObject(bucket) ?? {};
@@ -106,6 +108,8 @@ export async function fetchChatgptUsage(options: { startDate?: number; endDate?:
         
         cliUsage = addSurfaceUsage(cliUsage, dailyCli);
         webUsage = addSurfaceUsage(webUsage, dailyWeb);
+        cliDailyHistory.push(surfaceUsageToDaily(date, dailyCli));
+        webDailyHistory.push(surfaceUsageToDaily(date, dailyWeb));
 
         return {
           date,
@@ -123,6 +127,8 @@ export async function fetchChatgptUsage(options: { startDate?: number; endDate?:
       
       totals.models[0] = applySurfaceUsage(totals.models[0], webUsage);
       totals.models[1] = applySurfaceUsage(totals.models[1], cliUsage);
+      totals.models[0].dailyHistory = webDailyHistory;
+      totals.models[1].dailyHistory = cliDailyHistory;
       
     } else {
       console.error('[ChatGPT] Wham API error:', usageRes.status);
@@ -191,5 +197,15 @@ function readWorkspaceUsage(value: JsonObject): SurfaceUsage {
       numberValue(value.cached_text_input_tokens ?? value.cachedTextInputTokens),
     outputTokens: numberValue(value.text_output_tokens ?? value.textOutputTokens ?? value.output_tokens ?? value.outputTokens),
     requests: numberValue(value.turns ?? value.requests ?? value.request_count ?? value.requestCount),
+  };
+}
+
+function surfaceUsageToDaily(date: string, usage: SurfaceUsage): DailyUsage {
+  return {
+    date,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    requests: usage.requests,
+    cost: 0,
   };
 }

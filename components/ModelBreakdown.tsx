@@ -1,7 +1,19 @@
 import type { ErrorCode, ModelUsage, ServiceId } from '@/lib/types';
 import { formatCurrency, formatNum } from './format';
 
-export function ModelBreakdown({ models, serviceId, error }: { models: ModelUsage[]; serviceId: ServiceId; error?: ErrorCode }) {
+export function ModelBreakdown({
+  models,
+  serviceId,
+  error,
+  selectedModel,
+  onSelectModel,
+}: {
+  models: ModelUsage[];
+  serviceId: ServiceId;
+  error?: ErrorCode;
+  selectedModel?: string | null;
+  onSelectModel?: (model: string | null) => void;
+}) {
   if (models.length === 0) {
     return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">데이터 없음</div>;
   }
@@ -36,7 +48,11 @@ export function ModelBreakdown({ models, serviceId, error }: { models: ModelUsag
             const value = serviceId === 'figma' ? item.requests : item.cost;
             const share = total > 0 ? (value / total) * 100 : 0;
             return (
-              <tr key={item.model}>
+              <tr
+                key={item.model}
+                className={`${onSelectModel ? 'cursor-pointer hover:bg-slate-50' : ''} ${selectedModel === item.model ? 'bg-emerald-50' : ''}`}
+                onClick={() => onSelectModel?.(selectedModel === item.model ? null : item.model)}
+              >
                 <td className="px-4 py-3 font-medium text-slate-900">{item.model}</td>
                 <td className="px-4 py-3 text-right text-slate-700">{formatNum(item.requests)}</td>
                 {serviceId === 'figma' ? (

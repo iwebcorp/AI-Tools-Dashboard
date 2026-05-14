@@ -184,8 +184,11 @@ function ServiceDetail({
   const isCursor = usage.service === 'cursor';
   const isChatgpt = usage.service === 'chatgpt';
   const [selectedCursorAccountIndex, setSelectedCursorAccountIndex] = useState<number | null>(null);
+  const [selectedChatgptModel, setSelectedChatgptModel] = useState<string | null>(null);
   const selectedCursorAccount =
     isCursor && selectedCursorAccountIndex !== null ? usage.accounts?.[selectedCursorAccountIndex] : undefined;
+  const selectedChatgptModelUsage =
+    isChatgpt && selectedChatgptModel ? usage.models.find((model) => model.model === selectedChatgptModel) : undefined;
 
   return (
     <div className="mt-6 space-y-6">
@@ -242,9 +245,19 @@ function ServiceDetail({
         />
       ) : null}
 
-      <ModelBreakdown models={selectedCursorAccount?.models ?? usage.models} serviceId={usage.service} error={usage.error} />
+      <ModelBreakdown
+        models={selectedCursorAccount?.models ?? usage.models}
+        serviceId={usage.service}
+        error={usage.error}
+        selectedModel={isChatgpt ? selectedChatgptModel : undefined}
+        onSelectModel={isChatgpt ? setSelectedChatgptModel : undefined}
+      />
       {usage.error === 'PLAN_REQUIRED' ? null : (
-        <DailyChart service={selectedCursorAccount ? undefined : usage} account={selectedCursorAccount} />
+        <DailyChart
+          service={selectedCursorAccount || selectedChatgptModelUsage ? undefined : usage}
+          account={selectedCursorAccount}
+          model={selectedChatgptModelUsage}
+        />
       )}
     </div>
   );

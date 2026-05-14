@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { AccountUsage, AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
+import type { AccountUsage, AllUsageResponse, ModelUsage, ServiceId, ServiceUsage } from '@/lib/types';
 import { formatCurrency, formatNum } from './format';
+
 const serviceIds: ServiceId[] = ['openai', 'gemini', 'cursor', 'figma', 'chatgpt'];
 
 const names: Record<ServiceId, string> = {
@@ -21,13 +22,15 @@ const colors: Record<ServiceId, string> = {
   figma: '#D85A30',
   chatgpt: '#10A37F',
 };
+
 interface DailyChartProps {
   data?: AllUsageResponse;
   service?: ServiceUsage;
   account?: AccountUsage;
+  model?: ModelUsage;
 }
 
-export function DailyChart({ data, service, account }: DailyChartProps) {
+export function DailyChart({ data, service, account, model }: DailyChartProps) {
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens');
   const [visible, setVisible] = useState<Record<ServiceId, boolean>>({
     openai: true,
@@ -47,19 +50,20 @@ export function DailyChart({ data, service, account }: DailyChartProps) {
       }
     };
 
+    if (model?.dailyHistory) add('chatgpt', { dailyHistory: model.dailyHistory });
     if (account) add('cursor', account);
-    if (service && !account) add(service.service, service);
+    if (service && !account && !model) add(service.service, service);
     if (data) serviceIds.forEach((id) => add(id, data[id]));
     return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value);
-  }, [account, data, metric, service]);
+  }, [account, data, metric, model, service]);
 
-  const activeServices = account ? ['cursor' as const] : service ? [service.service] : serviceIds.filter((id) => visible[id]);
+  const activeServices = model ? ['chatgpt' as const] : account ? ['cursor' as const] : service ? [service.service] : serviceIds.filter((id) => visible[id]);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-base font-semibold text-slate-950">
-          {account ? `${account.label} 일별 추이` : '일별 추이'}
+          {model ? `${model.model} 일별 추이` : account ? `${account.label} 일별 추이` : '일별 추이'}
         </h3>
         <div className="flex rounded-md border border-slate-200 p-1 text-sm">
           <button
@@ -76,7 +80,7 @@ export function DailyChart({ data, service, account }: DailyChartProps) {
           </button>
         </div>
       </div>
-      {!service && !account ? (
+      {!service && !account && !model ? (
         <div className="mt-4 flex flex-wrap gap-3 text-sm">
           {serviceIds.map((id) => (
             <label key={id} className="flex items-center gap-2 text-slate-600">
@@ -94,7 +98,7 @@ export function DailyChart({ data, service, account }: DailyChartProps) {
       <div className="mt-4 h-72">
         {rows.length === 0 ? (
           <div className="flex h-full items-center justify-center rounded-md bg-slate-50 text-sm text-slate-500">
-            데이터 없음
+            표시할 데이터가 없습니다
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
