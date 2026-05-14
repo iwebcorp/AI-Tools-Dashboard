@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AccountUsage, AllUsageResponse, ServiceId, ServiceUsage } from '@/lib/types';
+import type { AccountUsage, AllUsageResponse, FigmaProject, ServiceId, ServiceUsage } from '@/lib/types';
 import { useUsageData } from '@/hooks/useUsageData';
 import { CostChart } from './CostChart';
 import { DailyChart } from './DailyChart';
@@ -245,6 +245,8 @@ function ServiceDetail({
         />
       ) : null}
 
+      {isFigma && usage.figma?.projects.length ? <FigmaProjects projects={usage.figma.projects} /> : null}
+
       <ModelBreakdown
         models={selectedCursorAccount?.models ?? usage.models}
         serviceId={usage.service}
@@ -371,6 +373,99 @@ function CursorAccounts({
       </div>
     </div>
   );
+}
+
+function FigmaProjects({ projects }: { projects: FigmaProject[] }) {
+  const today = dateInputValue(new Date());
+  const createdToday = projects.filter((project) => project.createdAt?.startsWith(today)).length;
+  const updatedToday = projects.filter((project) => project.updatedAt?.startsWith(today)).length;
+  const recentlyUpdated = projects.slice(0, 5);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Metric label="오늘 생성 프로젝트" value={formatNum(createdToday)} />
+        <Metric label="오늘 수정 프로젝트" value={formatNum(updatedToday)} />
+        <Metric label="최근 수정 프로젝트" value={recentlyUpdated[0]?.name ?? '-'} />
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+          <h2 className="text-sm font-semibold text-slate-950">Figma 프로젝트 현황</h2>
+          <span className="text-xs font-medium text-slate-500">수정일 최신순</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">프로젝트</th>
+                <th className="px-4 py-3 text-right">파일 수</th>
+                <th className="px-4 py-3">생성일</th>
+                <th className="px-4 py-3">마지막 수정일</th>
+                <th className="px-4 py-3">상태</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {projects.map((project) => {
+                const isCreatedToday = project.createdAt?.startsWith(today);
+                const isUpdatedToday = project.updatedAt?.startsWith(today);
+                return (
+                  <tr key={project.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {project.thumbnailUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={project.thumbnailUrl} alt="" className="h-9 w-12 rounded border border-slate-200 object-cover" />
+                        ) : (
+                          <div className="flex h-9 w-12 items-center justify-center rounded border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-400">
+                            FG
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-medium text-slate-900">{project.name}</div>
+                          <div className="text-xs text-slate-400">{project.id}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-700">{project.fileCount === undefined ? '-' : formatNum(project.fileCount)}</td>
+                    <td className="px-4 py-3 text-slate-700">{formatIsoDate(project.createdAt)}</td>
+                    <td className="px-4 py-3 text-slate-700">{formatIsoDate(project.updatedAt)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {isCreatedToday ? <StatusBadge tone="green">오늘 생성</StatusBadge> : null}
+                        {isUpdatedToday ? <StatusBadge tone="blue">오늘 수정</StatusBadge> : null}
+                        {!isCreatedToday && !isUpdatedToday ? <StatusBadge tone="slate">변동 없음</StatusBadge> : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ children, tone }: { children: string; tone: 'green' | 'blue' | 'slate' }) {
+  const className = {
+    green: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15',
+    blue: 'bg-sky-50 text-sky-700 ring-sky-600/15',
+    slate: 'bg-slate-100 text-slate-600 ring-slate-600/10',
+  }[tone];
+
+  return <span className={`rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset ${className}`}>{children}</span>;
+}
+
+function formatIsoDate(value?: string) {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

@@ -37,9 +37,31 @@ export interface FigmaUsage {
   projectCount: number;
   fileCount: number;
   projectsCreatedToday?: number;
+  filesUpdatedToday?: number;
   projectDeltaFromPreviousSnapshot?: number;
   previousSnapshotDate?: string;
   snapshotDate: string;
+  projects: FigmaProject[];
+  files: FigmaFile[];
+}
+
+export interface FigmaProject {
+  id: string;
+  name: string;
+  fileCount?: number;
+  thumbnailUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface FigmaFile {
+  key: string;
+  name: string;
+  projectId: string;
+  projectName: string;
+  thumbnailUrl?: string | null;
+  lastModified?: string;
+  branchName?: string;
 }
 
 export interface AccountUsage {

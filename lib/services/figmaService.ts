@@ -3,7 +3,7 @@ import 'server-only';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import type { DailyUsage, FigmaUsage, ModelUsage, ServiceUsage } from '@/lib/types';
+import type { DailyUsage, FigmaFile, FigmaProject, FigmaUsage, ModelUsage, ServiceUsage } from '@/lib/types';
 import { emptyUsage } from './shared';
 
 const ActivityLogSchema = z.object({
@@ -31,12 +31,25 @@ const ProjectsSchema = z.object({
 });
 
 const FilesSchema = z.object({
-  files: z.array(z.object({ key: z.string(), name: z.string().optional() })).default([]),
+  files: z
+    .array(
+      z
+        .object({
+          key: z.string(),
+          name: z.string().optional(),
+          thumbnail_url: z.string().nullable().optional(),
+          last_modified: z.string().optional(),
+          branch_name: z.string().optional(),
+        })
+        .passthrough()
+    )
+    .default([]),
 });
 
 const ProjectMetaSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(String),
   name: z.string().optional(),
+  thumbnail_url: z.string().nullable().optional(),
   file_count: z.number().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -164,6 +177,7 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
 
     const projects = parsed.data.projects;
     const metas = await Promise.all(projects.map((project) => fetchProjectMeta(accessToken, project.id)));
+    const projectDetails = buildProjectDetails(projects, metas);
     let fileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
 
     if (metas.every((meta) => !meta || meta.file_count === undefined)) {
@@ -181,6 +195,7 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
       projectDeltaFromPreviousSnapshot: snapshot.previous ? projects.length - snapshot.previous.projectCount : undefined,
       previousSnapshotDate: snapshot.previous?.date,
       snapshotDate: today,
+      projects: projectDetails,
     };
 
     return {
@@ -246,6 +261,7 @@ async function fetchProjectInsights(accessToken: string, teamId: string, account
 
   const projects = parsed.data.projects;
   const metas = await Promise.all(projects.map((project) => fetchProjectMeta(accessToken, project.id)));
+  const projectDetails = buildProjectDetails(projects, metas);
   let fileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
 
   if (metas.every((meta) => !meta || meta.file_count === undefined)) {
@@ -263,6 +279,7 @@ async function fetchProjectInsights(accessToken: string, teamId: string, account
     projectDeltaFromPreviousSnapshot: snapshot.previous ? projects.length - snapshot.previous.projectCount : undefined,
     previousSnapshotDate: snapshot.previous?.date,
     snapshotDate: today,
+    projects: projectDetails,
   };
 
   return {
@@ -291,6 +308,25 @@ async function fetchProjectInsights(accessToken: string, teamId: string, account
       },
     ],
   };
+}
+
+function buildProjectDetails(
+  projects: z.infer<typeof ProjectsSchema>['projects'],
+  metas: Array<z.infer<typeof ProjectMetaSchema> | null>
+): FigmaProject[] {
+  return projects
+    .map((project, index) => {
+      const meta = metas[index];
+      return {
+        id: project.id,
+        name: meta?.name ?? project.name ?? project.id,
+        fileCount: meta?.file_count,
+        thumbnailUrl: meta?.thumbnail_url,
+        createdAt: meta?.created_at,
+        updatedAt: meta?.updated_at,
+      };
+    })
+    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
 }
 
 async function fetchProjectFileCountFallback(accessToken: string, projectIds: string[]) {
