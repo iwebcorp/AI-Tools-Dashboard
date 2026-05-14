@@ -105,8 +105,8 @@ export function Dashboard() {
             <button
               key={item}
               className={`whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${tab === item
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-slate-900 text-white shadow-md'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               onClick={() => setTab(item)}
             >
@@ -144,7 +144,7 @@ function Overview({ data }: { data: AllUsageResponse }) {
       <div className="grid gap-4 md:grid-cols-3">
         <Metric label="이번 달 총 비용" value={formatCurrency(totalCost)} />
         <Metric label="총 토큰/API 호출" value={formatNum(totalTokens)} />
-        <Metric label="연결된 서비스" value={`${active}/6`} />
+        <Metric label="연결된 서비스" value={`${active}/5`} />
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {serviceIds.map((id) => (
