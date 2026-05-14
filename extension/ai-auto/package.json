@@ -6,6 +6,8 @@
   "author": "DU",
   "scripts": {
     "dev": "plasmo dev",
+    "dev:detached": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-dev-detached.ps1",
+    "dev:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-dev-detached.ps1",
     "build": "plasmo build",
     "package": "plasmo package"
   },

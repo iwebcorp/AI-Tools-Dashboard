@@ -7,8 +7,29 @@ const sessionSyncBodySchema = syncedSessionSchema.extend({
   userAgent: z.string().optional().or(z.literal('')),
 });
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, x-sync-secret',
+};
+
+function withCors(response: NextResponse) {
+  Object.entries(corsHeaders).forEach(([key, value]) => {
+    response.headers.set(key, value);
+  });
+
+  return response;
+}
+
 function jsonError(status: number, code: string, message: string) {
-  return NextResponse.json({ ok: false, code, message }, { status });
+  return withCors(NextResponse.json({ ok: false, code, message }, { status }));
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
 }
 
 export async function POST(request: Request) {
@@ -42,9 +63,11 @@ export async function POST(request: Request) {
     return jsonError(500, 'REDIS_ERROR', 'Failed to store session.');
   }
 
-  return NextResponse.json({
-    ok: true,
-    service: parsed.data.service,
-    updatedAt: parsed.data.updatedAt,
-  });
+  return withCors(
+    NextResponse.json({
+      ok: true,
+      service: parsed.data.service,
+      updatedAt: parsed.data.updatedAt,
+    })
+  );
 }
