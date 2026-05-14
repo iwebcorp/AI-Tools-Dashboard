@@ -25,7 +25,7 @@ const FilesSchema = z.object({
   files: z.array(z.object({ key: z.string(), name: z.string().optional() })).default([]),
 });
 
-export async function fetchFigmaUsage(): Promise<ServiceUsage> {
+export async function fetchFigmaUsage(options: { startDate?: number; endDate?: number } = {}): Promise<ServiceUsage> {
   const accessToken = process.env.FIGMA_ACCESS_TOKEN;
   const teamId = process.env.FIGMA_TEAM_ID;
   if (!accessToken || !teamId) {
@@ -33,15 +33,19 @@ export async function fetchFigmaUsage(): Promise<ServiceUsage> {
   }
 
   if (process.env.FIGMA_OAUTH_TOKEN) {
-    const enterprise = await fetchActivityLogs(process.env.FIGMA_OAUTH_TOKEN);
+    const enterprise = await fetchActivityLogs(process.env.FIGMA_OAUTH_TOKEN, options);
     if (enterprise) return enterprise;
   }
 
   return fetchProjectFallback(accessToken, teamId);
 }
 
-async function fetchActivityLogs(oauthToken: string): Promise<ServiceUsage | null> {
-  const response = await fetch('https://api.figma.com/v1/activity_logs?limit=100', {
+async function fetchActivityLogs(oauthToken: string, options: { startDate?: number; endDate?: number }): Promise<ServiceUsage | null> {
+  let url = 'https://api.figma.com/v1/activity_logs?limit=100';
+  if (options.startDate) url += `&start_time=${Math.floor(options.startDate / 1000)}`;
+  if (options.endDate) url += `&end_time=${Math.floor(options.endDate / 1000)}`;
+
+  const response = await fetch(url, {
     headers: { Authorization: `Bearer ${oauthToken}` },
     cache: 'no-store',
   });

@@ -3,7 +3,7 @@ import 'server-only';
 import type { ServiceUsage } from '@/lib/types';
 import { emptyUsage } from './shared';
 
-export async function fetchChatgptUsage(options: { cursorStart?: string; cursorEnd?: string } = {}): Promise<ServiceUsage> {
+export async function fetchChatgptUsage(options: { startDate?: number; endDate?: number } = {}): Promise<ServiceUsage> {
   const cookies = process.env.CHATGPT_COOKIES;
   const bearerToken = process.env.CHATGPT_BEARER_TOKEN;
   
@@ -58,8 +58,9 @@ export async function fetchChatgptUsage(options: { cursorStart?: string; cursorE
     }
 
     // 2. 토큰 사용량 (wham API) 가져오기
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const now = Date.now();
+    const end = new Date(options.endDate ?? now);
+    const start = new Date(options.startDate ?? new Date(end.getFullYear(), end.getMonth(), 1).getTime());
     
     const formatDate = (d: Date) => {
       const yyyy = d.getFullYear();
@@ -69,7 +70,7 @@ export async function fetchChatgptUsage(options: { cursorStart?: string; cursorE
     };
 
     const startDateStr = formatDate(start);
-    const endDateStr = formatDate(today);
+    const endDateStr = formatDate(end);
     
     const usageRes = await fetch(`https://chatgpt.com/backend-api/wham/usage/daily-token-usage-breakdown?start_date=${startDateStr}&end_date=${endDateStr}&group_by=day`, { headers, cache: 'no-store' });
     

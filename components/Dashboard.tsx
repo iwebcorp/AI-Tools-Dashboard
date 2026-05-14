@@ -285,7 +285,7 @@ function CursorRangeControls({
         >
           이번 달
         </button>
-        <p className="text-sm text-slate-500">Cursor 토큰, 비용, 계정별 표, 일별 추이를 선택 기간 기준으로 다시 계산합니다.</p>
+        <p className="text-sm text-slate-500">선택한 기간을 기준으로 사용량 및 표, 일별 추이를 다시 계산합니다.</p>
       </div>
     </div>
   );
@@ -351,9 +351,9 @@ function CursorAccounts({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="text-sm text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
+    <div className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all hover:border-slate-300 hover:shadow-md">
+      <div className="text-sm font-medium text-slate-500 group-hover:text-slate-600">{label}</div>
+      <div className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{value}</div>
     </div>
   );
 }
