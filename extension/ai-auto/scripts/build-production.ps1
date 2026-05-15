@@ -52,11 +52,7 @@ if (Test-Path -LiteralPath $outputDir) {
 
 New-Item -ItemType Directory -Path $outputDir | Out-Null
 
-$defineArgs = @(
-  "--define:process.env.PLASMO_PUBLIC_SYNC_API_URL=`"$syncApiUrl`"",
-  "--define:process.env.PLASMO_PUBLIC_SYNC_SECRET=`"$syncSecret`"",
-  "--define:process.env.NODE_ENV=`"production`""
-)
+$processBanner = "globalThis.process={env:{PLASMO_PUBLIC_SYNC_API_URL:'$syncApiUrl',PLASMO_PUBLIC_SYNC_SECRET:'$syncSecret',NODE_ENV:'production'}};"
 
 Invoke-Esbuild -Arguments @(
   "background.ts",
@@ -64,8 +60,9 @@ Invoke-Esbuild -Arguments @(
   "--platform=browser",
   "--target=chrome120",
   "--format=iife",
+  "--banner:js=$processBanner",
   "--outfile=build/chrome-mv3-prod/background.js"
-) + $defineArgs
+)
 
 Invoke-Esbuild -Arguments @(
   "contents/chatgpt.ts",
@@ -73,17 +70,20 @@ Invoke-Esbuild -Arguments @(
   "--platform=browser",
   "--target=chrome120",
   "--format=iife",
+  "--banner:js=$processBanner",
   "--outfile=build/chrome-mv3-prod/chatgpt.js"
-) + $defineArgs
+)
 
 Invoke-Esbuild -Arguments @(
-  "popup.tsx",
+  "popup-main.tsx",
   "--bundle",
   "--platform=browser",
   "--target=chrome120",
   "--format=iife",
+  "--jsx=automatic",
+  "--banner:js=$processBanner",
   "--outfile=build/chrome-mv3-prod/popup.js"
-) + $defineArgs
+)
 
 Copy-Item -LiteralPath $iconSource -Destination (Join-Path $outputDir "icon.png")
 

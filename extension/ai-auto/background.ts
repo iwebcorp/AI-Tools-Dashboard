@@ -54,6 +54,24 @@ function simpleHash(value: string): string {
   return String(hash)
 }
 
+async function readErrorMessage(response: Response) {
+  const fallback = `Sync failed: ${response.status}`
+
+  try {
+    const data = await response.json()
+    if (typeof data?.message === "string" && data.message.length > 0) {
+      return `${fallback} (${data.message})`
+    }
+    if (typeof data?.code === "string" && data.code.length > 0) {
+      return `${fallback} (${data.code})`
+    }
+  } catch {
+    // Ignore JSON parsing errors and keep the status-only fallback.
+  }
+
+  return fallback
+}
+
 async function syncCursorSession(force = false) {
   const now = new Date().toISOString()
   console.log(`[Sync-Cursor] Starting sync process (force=${force}) at`, now)
@@ -102,7 +120,7 @@ async function syncCursorSession(force = false) {
     })
 
     if (!response.ok) {
-      const error = `Sync failed: ${response.status}`
+      const error = await readErrorMessage(response)
       await setState("cursor", { lastError: error })
       return
     }
@@ -190,7 +208,7 @@ async function syncChatgptSession(bearer?: string, force = false) {
     })
 
     if (!response.ok) {
-      const error = `Sync failed: ${response.status}`
+      const error = await readErrorMessage(response)
       await setState("chatgpt", { lastError: error })
       return
     }
