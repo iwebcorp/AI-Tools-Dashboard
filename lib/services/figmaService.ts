@@ -177,6 +177,7 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
       return emptyUsage('figma', 'UNKNOWN', '팀 내에 조회 가능한 프로젝트가 없습니다. Team ID가 정확한지, 혹은 프로젝트가 모두 비공개인지 확인하세요.');
     }
 
+    const today = dateKey();
     const metas = await Promise.all(projects.map((project) => fetchProjectMeta(accessToken, project.id)));
     const projectDetails = buildProjectDetails(projects, metas);
     const files = await fetchProjectFiles(accessToken, projects);
@@ -199,10 +200,8 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
     const metaFileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
     const fileCount = metaFileCount || files.length;
 
-    const today = dateKey();
     const projectsCreatedToday = metas.filter((meta) => isSameDayKST(meta?.created_at, today)).length;
     const filesUpdatedToday = files.filter((file) => isSameDayKST(file.lastModified, today)).length;
-
     // Simulate daily history from file modifications (using KST)
     const dailyMap = new Map<string, DailyUsage>();
     for (const file of files) {
