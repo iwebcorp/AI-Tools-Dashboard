@@ -41,7 +41,7 @@ export function DailyChart({ data, service, account, model }: DailyChartProps) {
   });
 
   const rows = useMemo(() => {
-    const byDate = new Map<string, Record<string, string | number>>();
+    const byDate = new Map<string, Record<string, any>>();
     const add = (id: ServiceId, usage: Pick<ServiceUsage, 'dailyHistory'>) => {
       for (const day of usage.dailyHistory) {
         const row = byDate.get(day.date) ?? { date: day.date.slice(5).replace('-', '/') };
@@ -54,7 +54,34 @@ export function DailyChart({ data, service, account, model }: DailyChartProps) {
     if (account) add('cursor', account);
     if (service && !account && !model) add(service.service, service);
     if (data) serviceIds.forEach((id) => add(id, data[id]));
-    return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value);
+
+    if (byDate.size === 0) return [];
+
+    const sortedDates = [...byDate.keys()].sort();
+    const [startYear, startMonth, startDay] = sortedDates[0].split('-').map(Number);
+    const [endYear, endMonth, endDay] = sortedDates[sortedDates.length - 1].split('-').map(Number);
+    
+    const start = new Date(startYear, startMonth - 1, startDay);
+    const end = new Date(endYear, endMonth - 1, endDay);
+    
+    const result = [];
+    const current = new Date(start);
+    const activeIds = model ? (['chatgpt'] as const) : account ? (['cursor'] as const) : service ? ([service.service] as const) : serviceIds;
+
+    while (current <= end) {
+      const y = current.getFullYear();
+      const m = String(current.getMonth() + 1).padStart(2, '0');
+      const d = String(current.getDate()).padStart(2, '0');
+      const dateKey = `${y}-${m}-${d}`;
+      
+      const row = byDate.get(dateKey) || { date: dateKey.slice(5).replace('-', '/') };
+      activeIds.forEach((id) => {
+        if (row[id] === undefined) row[id] = 0;
+      });
+      result.push(row);
+      current.setDate(current.getDate() + 1);
+    }
+    return result;
   }, [account, data, metric, model, service]);
 
   const activeServices = model ? ['chatgpt' as const] : account ? ['cursor' as const] : service ? [service.service] : serviceIds.filter((id) => visible[id]);
@@ -112,7 +139,15 @@ export function DailyChart({ data, service, account, model }: DailyChartProps) {
               />
               <Tooltip formatter={(value) => (metric === 'cost' ? formatCurrency(Number(value)) : formatNum(Number(value)))} />
               {activeServices.map((id) => (
-                <Line key={id} type="monotone" dataKey={id} stroke={colors[id]} strokeWidth={2} dot={false} />
+                <Line
+                  key={id}
+                  type="monotone"
+                  dataKey={id}
+                  stroke={colors[id]}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                />
               ))}
             </LineChart>
           </ResponsiveContainer>
