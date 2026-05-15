@@ -28,9 +28,10 @@ interface DailyChartProps {
   service?: ServiceUsage;
   account?: AccountUsage;
   model?: ModelUsage;
+  serviceId?: ServiceId;
 }
 
-export function DailyChart({ data, service, account, model }: DailyChartProps) {
+export function DailyChart({ data, service, account, model, serviceId }: DailyChartProps) {
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens');
   const [visible, setVisible] = useState<Record<ServiceId, boolean>>({
     openai: true,
@@ -50,8 +51,10 @@ export function DailyChart({ data, service, account, model }: DailyChartProps) {
       }
     };
 
-    if (model?.dailyHistory) add('chatgpt', { dailyHistory: model.dailyHistory });
-    if (account) add('cursor', account);
+    const sid = serviceId || service?.service || 'chatgpt';
+
+    if (model?.dailyHistory) add(sid, { dailyHistory: model.dailyHistory });
+    if (account?.dailyHistory) add('cursor', account);
     if (service && !account && !model) add(service.service, service);
     if (data) serviceIds.forEach((id) => add(id, data[id]));
 
@@ -66,7 +69,7 @@ export function DailyChart({ data, service, account, model }: DailyChartProps) {
     
     const result = [];
     const current = new Date(start);
-    const activeIds = model ? (['chatgpt'] as const) : account ? (['cursor'] as const) : service ? ([service.service] as const) : serviceIds;
+    const activeIds = model ? ([sid] as const) : account ? (['cursor'] as const) : service ? ([service.service] as const) : serviceIds;
 
     while (current <= end) {
       const y = current.getFullYear();
@@ -82,9 +85,9 @@ export function DailyChart({ data, service, account, model }: DailyChartProps) {
       current.setDate(current.getDate() + 1);
     }
     return result;
-  }, [account, data, metric, model, service]);
+  }, [account, data, metric, model, service, serviceId]);
 
-  const activeServices = model ? ['chatgpt' as const] : account ? ['cursor' as const] : service ? [service.service] : serviceIds.filter((id) => visible[id]);
+  const activeServices = model ? [serviceId || service?.service || ('chatgpt' as const)] : account ? ['cursor' as const] : service ? [service.service] : serviceIds.filter((id) => visible[id]);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">

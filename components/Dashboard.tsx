@@ -181,39 +181,52 @@ function ServiceDetail({
 }) {
   const isFigma = usage.service === 'figma';
   const isCursor = usage.service === 'cursor';
-  const isChatgpt = usage.service === 'chatgpt';
   const [selectedCursorAccountIndex, setSelectedCursorAccountIndex] = useState<number | null>(null);
-  const [selectedChatgptModel, setSelectedChatgptModel] = useState<string | null>(null);
+  const [selectedModelName, setSelectedModelName] = useState<string | null>(null);
+
   const selectedCursorAccount =
     isCursor && selectedCursorAccountIndex !== null ? usage.accounts?.[selectedCursorAccountIndex] : undefined;
-  const selectedChatgptModelUsage =
-    isChatgpt && selectedChatgptModel ? usage.models.find((model) => model.model === selectedChatgptModel) : undefined;
+  
+  const selectedModel =
+    selectedModelName ? (selectedCursorAccount?.models ?? usage.models).find((m) => m.model === selectedModelName) : undefined;
+
+  // 지표 계산: 선택된 계정이나 모델이 있으면 해당 데이터를 사용, 없으면 전체 서비스 데이터 사용
+  const metrics = {
+    requests: selectedModel?.requests ?? selectedCursorAccount?.requests ?? usage.requests,
+    inputTokens: selectedModel?.inputTokens ?? selectedCursorAccount?.tokens.input ?? usage.tokens.input,
+    outputTokens: selectedModel?.outputTokens ?? selectedCursorAccount?.tokens.output ?? usage.tokens.output,
+    totalTokens: (selectedModel ? (selectedModel.inputTokens + selectedModel.outputTokens) : undefined) ?? selectedCursorAccount?.tokens.total ?? usage.tokens.total,
+    cost: selectedModel?.cost ?? selectedCursorAccount?.cost.thisMonth ?? usage.cost.thisMonth,
+    todayCost: selectedCursorAccount?.cost.today ?? usage.cost.today,
+  };
 
   return (
     <div className="mt-6 space-y-6">
-      {(isCursor || isFigma || isChatgpt) ? <UsageRangeControls range={usageRange} onApply={onUsageRangeApply} /> : null}
+      {isCursor || isFigma || usage.service === 'chatgpt' || usage.service === 'openai' || usage.service === 'gemini' ? (
+        <UsageRangeControls range={usageRange} onApply={onUsageRangeApply} />
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         {isCursor ? (
           <>
-            <Metric label="선택 기간 비용" value={formatCurrency(usage.cost.today)} />
-            <Metric label="선택 기간 누적 비용" value={formatCurrency(usage.cost.thisMonth)} />
-            <Metric label="선택 기간 총 토큰" value={formatNum(usage.tokens.total)} />
-            <Metric label="선택 기간 요청 수" value={formatNum(usage.requests)} />
+            <Metric label={selectedModel ? '선택 모델 오늘 추가 요금' : '오늘 추가 요금'} value={formatCurrency(metrics.todayCost)} />
+            <Metric label={selectedModel ? '선택 모델 기간 추가 요금' : '선택 기간 추가 요금'} value={formatCurrency(metrics.cost)} />
+            <Metric label="선택 기간 총 토큰" value={formatNum(metrics.totalTokens)} />
+            <Metric label="선택 기간 요청 수" value={formatNum(metrics.requests)} />
           </>
         ) : isFigma ? null : usage.service === 'chatgpt' ? (
           <>
-            <Metric label="총 요청 수" value={formatNum(usage.requests)} />
-            <Metric label="총 입력 토큰" value={formatNum(usage.tokens.input)} />
-            <Metric label="총 출력 토큰" value={formatNum(usage.tokens.output)} />
+            <Metric label={selectedModel ? `${selectedModel.model} 요청 수` : '총 요청 수'} value={formatNum(metrics.requests)} />
+            <Metric label="총 입력 토큰" value={formatNum(metrics.inputTokens)} />
+            <Metric label="총 출력 토큰" value={formatNum(metrics.outputTokens)} />
             <Metric label="요금" value="플랜 포함" />
           </>
         ) : (
           <>
-            <Metric label="이번 달 입력 토큰" value={formatNum(usage.tokens.input)} />
-            <Metric label="이번 달 출력 토큰" value={formatNum(usage.tokens.output)} />
-            <Metric label="이번 달 비용" value={formatCurrency(usage.cost.thisMonth)} />
-            <Metric label="이번 달 요청 수" value={formatNum(usage.requests)} />
+            <Metric label={selectedModel ? `${selectedModel.model} 입력 토큰` : '이번 달 입력 토큰'} value={formatNum(metrics.inputTokens)} />
+            <Metric label={selectedModel ? `${selectedModel.model} 출력 토큰` : '이번 달 출력 토큰'} value={formatNum(metrics.outputTokens)} />
+            <Metric label={selectedModel ? `${selectedModel.model} 비용` : '이번 달 비용'} value={formatCurrency(metrics.cost)} />
+            <Metric label="이번 달 요청 수" value={formatNum(metrics.requests)} />
           </>
         )}
       </div>
@@ -224,7 +237,10 @@ function ServiceDetail({
         <CursorAccounts
           accounts={usage.accounts}
           selectedIndex={selectedCursorAccountIndex}
-          onSelect={setSelectedCursorAccountIndex}
+          onSelect={(index) => {
+            setSelectedCursorAccountIndex(index);
+            setSelectedModelName(null); // 계정 변경 시 모델 선택 초기화
+          }}
         />
       ) : null}
 
@@ -234,14 +250,16 @@ function ServiceDetail({
         models={selectedCursorAccount?.models ?? usage.models}
         serviceId={usage.service}
         error={usage.error}
-        selectedModel={isChatgpt ? selectedChatgptModel : undefined}
-        onSelectModel={isChatgpt ? setSelectedChatgptModel : undefined}
+        selectedModel={selectedModelName}
+        onSelectModel={setSelectedModelName}
       />
+      
       {usage.error === 'PLAN_REQUIRED' ? null : (
         <DailyChart
-          service={selectedCursorAccount || selectedChatgptModelUsage ? undefined : usage}
+          service={selectedCursorAccount || selectedModel ? undefined : usage}
           account={selectedCursorAccount}
-          model={selectedChatgptModelUsage}
+          model={selectedModel}
+          serviceId={usage.service}
         />
       )}
     </div>
@@ -309,50 +327,71 @@ function CursorAccounts({
   selectedIndex: number | null;
   onSelect: (index: number | null) => void;
 }) {
+  const totalCost = accounts.reduce((sum, a) => sum + a.cost.thisMonth, 0);
+
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-950">Cursor 계정별 선택 기간 사용량</h2>
-        {selectedIndex !== null ? (
-          <button className="text-sm font-medium text-slate-600 hover:text-slate-950" onClick={() => onSelect(null)}>
-            전체 보기
-          </button>
-        ) : null}
+    <div className="space-y-5">
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-lg font-semibold text-slate-900">Cursor 계정별 선택 기간 사용량</h2>
+        <div className="text-sm font-medium text-slate-500">
+          총 {accounts.length}개 계정
+        </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3">계정</th>
-              <th className="px-4 py-3 text-right">오늘 비용</th>
-              <th className="px-4 py-3 text-right">선택 기간 비용</th>
-              <th className="px-4 py-3 text-right">선택 기간 총 토큰</th>
-              <th className="px-4 py-3 text-right">입력 토큰</th>
-              <th className="px-4 py-3 text-right">출력 토큰</th>
-              <th className="px-4 py-3 text-right">요청 수</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {accounts.map((account, index) => {
-              const selected = selectedIndex === index;
-              return (
-                <tr
-                  key={account.label}
-                  className={`cursor-pointer ${selected ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
-                  onClick={() => onSelect(selected ? null : index)}
-                >
-                  <td className="px-4 py-3 font-medium text-slate-900">{account.label}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(account.cost.today)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(account.cost.thisMonth)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.tokens.total)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.tokens.input)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.tokens.output)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{formatNum(account.requests)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {accounts.map((account, index) => {
+          const isSelected = selectedIndex === index;
+          const share = totalCost > 0 ? (account.cost.thisMonth / totalCost) * 100 : 0;
+
+          return (
+            <div
+              key={account.label}
+              className={`group relative flex flex-col rounded-2xl border p-6 transition-all cursor-pointer hover:border-slate-300 hover:shadow-md ${
+                isSelected ? 'border-amber-500 bg-amber-50/30 ring-1 ring-amber-500' : 'border-slate-200 bg-white'
+              }`}
+              onClick={() => onSelect(isSelected ? null : index)}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-base font-bold text-slate-900" title={account.label}>
+                    {account.label}
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-500">{formatNum(account.requests)} 요청</span>
+                    <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded uppercase tracking-tighter">
+                      {share.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-base font-black text-slate-950">{formatCurrency(account.cost.thisMonth)}</div>
+                  <div className="text-xs font-medium text-slate-400">선택 기간 비용</div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400">오늘 비용</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-700">{formatCurrency(account.cost.today)}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400">총 토큰</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-700">{formatNum(account.tokens.total)}</div>
+                </div>
+              </div>
+
+              {/* Progress Bar for Share */}
+              <div className="mt-auto pt-5">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={`h-full transition-all duration-500 ${isSelected ? 'bg-amber-500' : 'bg-slate-300 group-hover:bg-slate-400'}`}
+                    style={{ width: `${share}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

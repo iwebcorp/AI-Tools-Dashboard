@@ -27,12 +27,12 @@ export function ModelBreakdown({
   const totalRequests = sorted.reduce((sum, item) => sum + item.requests, 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-base font-semibold text-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900">
           {serviceId === 'figma' ? (error === 'PLAN_REQUIRED' ? '데이터 종류별 요약' : '이벤트 타입별 요약') : '모델별 상세 내역'}
         </h3>
-        <div className="text-xs font-medium text-slate-500">
+        <div className="text-sm font-medium text-slate-500">
           총 {sorted.length}개 {serviceId === 'figma' ? '분류' : '모델'}
         </div>
       </div>
@@ -46,20 +46,20 @@ export function ModelBreakdown({
           return (
             <div
               key={item.model}
-              className={`group relative flex flex-col rounded-2xl border p-5 transition-all ${
+              className={`group relative flex flex-col rounded-2xl border p-6 transition-all ${
                 onSelectModel ? 'cursor-pointer hover:border-slate-300 hover:shadow-md' : 'border-slate-200'
               } ${isSelected ? 'border-emerald-500 bg-emerald-50/30 ring-1 ring-emerald-500' : 'border-slate-200 bg-white'}`}
               onClick={() => onSelectModel?.(isSelected ? null : item.model)}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-bold text-slate-900" title={item.model}>
+                  <div className="truncate text-base font-bold text-slate-900" title={item.model}>
                     {item.model}
                   </div>
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="text-xs font-medium text-slate-500">{formatNum(item.requests)} 요청</span>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-500">{formatNum(item.requests)} 요청</span>
                     {serviceId !== 'figma' && (
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded uppercase tracking-tighter">
+                      <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase tracking-tighter">
                         {share.toFixed(1)}%
                       </span>
                     )}
@@ -67,28 +67,28 @@ export function ModelBreakdown({
                 </div>
                 {serviceId !== 'figma' && (
                   <div className="text-right">
-                    <div className="text-sm font-black text-slate-950">{formatCurrency(item.cost)}</div>
-                    <div className="text-[10px] font-medium text-slate-400">이번 달 사용액</div>
+                    <div className="text-base font-black text-slate-950">{formatCurrency(item.cost)}</div>
+                    <div className="text-xs font-medium text-slate-400">이번 달 사용액</div>
                   </div>
                 )}
               </div>
 
               {serviceId !== 'figma' && (
-                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
+                <div className="mt-5 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
                   <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">입력/캐시</div>
-                    <div className="mt-0.5 text-xs font-semibold text-slate-700">{formatNum(item.inputTokens)}</div>
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-400">입력/캐시</div>
+                    <div className="mt-1 text-sm font-semibold text-slate-700">{formatNum(item.inputTokens)}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">출력</div>
-                    <div className="mt-0.5 text-xs font-semibold text-slate-700">{formatNum(item.outputTokens)}</div>
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-400">출력</div>
+                    <div className="mt-1 text-sm font-semibold text-slate-700">{formatNum(item.outputTokens)}</div>
                   </div>
                 </div>
               )}
 
               {/* Progress Bar for Share */}
-              <div className="mt-auto pt-4">
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className="mt-auto pt-5">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                   <div
                     className={`h-full transition-all duration-500 ${isSelected ? 'bg-emerald-500' : 'bg-slate-300 group-hover:bg-slate-400'}`}
                     style={{ width: `${share}%` }}
