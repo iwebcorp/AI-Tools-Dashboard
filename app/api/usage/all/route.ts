@@ -33,6 +33,9 @@ function parseUsageRange(request: Request): UsageRange {
   };
 }
 
+import { mergeWithStoredHistory } from '@/lib/services/historyStore';
+// ... 기존 임포트 유지
+
 async function getServiceUsage(service: ServiceId, usageRange: UsageRange, bypassCache = false): Promise<ServiceUsage> {
   const cacheKey =
     service === 'cursor' || service === 'figma' || service === 'chatgpt'
@@ -45,7 +48,11 @@ async function getServiceUsage(service: ServiceId, usageRange: UsageRange, bypas
   }
 
   try {
-    const data = service === 'cursor' ? await fetchCursorUsage(usageRange) : await fetchers[service](usageRange);
+    const rawData = service === 'cursor' ? await fetchCursorUsage(usageRange) : await fetchers[service](usageRange);
+    
+    // 1. Redis 히스토리와 머지 (이 과정에서 자동 저장도 일어남)
+    const data = await mergeWithStoredHistory(rawData);
+
     // Figma는 더 자주 업데이트되도록 TTL을 60초로 설정, 나머지는 300초(5분)
     const ttl = service === 'figma' ? 60 : 300;
     setCache(cacheKey, data, ttl);

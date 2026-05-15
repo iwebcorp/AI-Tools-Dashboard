@@ -119,6 +119,7 @@ export async function fetchChatgptUsage(options: { startDate?: number; endDate?:
 
     if (usageRes.ok) {
       const usageData = (await usageRes.json()) as unknown;
+      console.log('[ChatGPT] Raw usage data:', JSON.stringify(usageData, null, 2));
       const buckets = getArray(getObject(usageData)?.data);
       
       let cliUsage: SurfaceUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
