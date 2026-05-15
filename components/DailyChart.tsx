@@ -33,6 +33,7 @@ interface DailyChartProps {
 
 export function DailyChart({ data, service, account, model, serviceId }: DailyChartProps) {
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens');
+  const [range, setRange] = useState<'7d' | '30d' | 'all'>('7d');
   const [visible, setVisible] = useState<Record<ServiceId, boolean>>({
     openai: true,
     gemini: true,
@@ -45,7 +46,7 @@ export function DailyChart({ data, service, account, model, serviceId }: DailyCh
     const byDate = new Map<string, Record<string, any>>();
     const add = (id: ServiceId, usage: Pick<ServiceUsage, 'dailyHistory'>) => {
       for (const day of usage.dailyHistory) {
-        const row = byDate.get(day.date) ?? { date: day.date.slice(5).replace('-', '/') };
+        const row = byDate.get(day.date) ?? { _date: day.date };
         row[id] = metric === 'cost' ? day.cost : day.inputTokens + day.outputTokens || day.requests;
         byDate.set(day.date, row);
       }
@@ -60,9 +61,22 @@ export function DailyChart({ data, service, account, model, serviceId }: DailyCh
 
     if (byDate.size === 0) return [];
 
-    const sortedDates = [...byDate.keys()].sort();
-    const [startYear, startMonth, startDay] = sortedDates[0].split('-').map(Number);
-    const [endYear, endMonth, endDay] = sortedDates[sortedDates.length - 1].split('-').map(Number);
+    // 1. Determine the range based on selected filter
+    const allDates = [...byDate.keys()].sort();
+    const endDateStr = allDates[allDates.length - 1];
+    let startDateStr = allDates[0];
+
+    if (range === '7d' || range === '30d') {
+      const days = range === '7d' ? 7 : 30;
+      const lastDate = new Date(endDateStr);
+      const limitDate = new Date(lastDate);
+      limitDate.setDate(lastDate.getDate() - (days - 1));
+      const limitStr = limitDate.toISOString().slice(0, 10);
+      if (limitStr > startDateStr) startDateStr = limitStr;
+    }
+
+    const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number);
+    const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number);
     
     const start = new Date(startYear, startMonth - 1, startDay);
     const end = new Date(endYear, endMonth - 1, endDay);
@@ -71,21 +85,30 @@ export function DailyChart({ data, service, account, model, serviceId }: DailyCh
     const current = new Date(start);
     const activeIds = model ? ([sid] as const) : account ? (['cursor'] as const) : service ? ([service.service] as const) : serviceIds;
 
+    const weekday = ['일', '월', '화', '수', '목', '금', '토'];
+
     while (current <= end) {
       const y = current.getFullYear();
-      const m = String(current.getMonth() + 1).padStart(2, '0');
-      const d = String(current.getDate()).padStart(2, '0');
-      const dateKey = `${y}-${m}-${d}`;
+      const m = current.getMonth() + 1;
+      const d = current.getDate();
+      const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       
-      const row = byDate.get(dateKey) || { date: dateKey.slice(5).replace('-', '/') };
+      const existing = byDate.get(dateKey);
+      const row: Record<string, any> = existing || {};
+      
+      // Format: 5/15 (금)
+      row.date = `${m}/${d} (${weekday[current.getDay()]})`;
+      row.fullDate = dateKey;
+
       activeIds.forEach((id) => {
         if (row[id] === undefined) row[id] = 0;
       });
+      
       result.push(row);
       current.setDate(current.getDate() + 1);
     }
     return result;
-  }, [account, data, metric, model, service, serviceId]);
+  }, [account, data, metric, model, range, service, serviceId]);
 
   const activeServices = model ? [serviceId || service?.service || ('chatgpt' as const)] : account ? ['cursor' as const] : service ? [service.service] : serviceIds.filter((id) => visible[id]);
 
@@ -95,19 +118,44 @@ export function DailyChart({ data, service, account, model, serviceId }: DailyCh
         <h3 className="text-base font-semibold text-slate-950">
           {model ? `${model.model} 일별 추이` : account ? `${account.label} 일별 추이` : '일별 추이'}
         </h3>
-        <div className="flex rounded-md border border-slate-200 p-1 text-sm">
-          <button
-            className={`rounded px-3 py-1 ${metric === 'tokens' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
-            onClick={() => setMetric('tokens')}
-          >
-            토큰
-          </button>
-          <button
-            className={`rounded px-3 py-1 ${metric === 'cost' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
-            onClick={() => setMetric('cost')}
-          >
-            비용
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Range Selector */}
+          <div className="flex rounded-md border border-slate-200 p-1 text-sm bg-slate-50">
+            <button
+              className={`rounded px-2 py-1 ${range === '7d' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setRange('7d')}
+            >
+              7일
+            </button>
+            <button
+              className={`rounded px-2 py-1 ${range === '30d' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setRange('30d')}
+            >
+              30일
+            </button>
+            <button
+              className={`rounded px-2 py-1 ${range === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setRange('all')}
+            >
+              전체
+            </button>
+          </div>
+
+          {/* Metric Selector */}
+          <div className="flex rounded-md border border-slate-200 p-1 text-sm">
+            <button
+              className={`rounded px-3 py-1 ${metric === 'tokens' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
+              onClick={() => setMetric('tokens')}
+            >
+              토큰
+            </button>
+            <button
+              className={`rounded px-3 py-1 ${metric === 'cost' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
+              onClick={() => setMetric('cost')}
+            >
+              비용
+            </button>
+          </div>
         </div>
       </div>
       {!service && !account && !model ? (
@@ -132,15 +180,26 @@ export function DailyChart({ data, service, account, model, serviceId }: DailyCh
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={rows}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="date" tickLine={false} axisLine={false} />
+            <LineChart data={rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="date" 
+                tickLine={false} 
+                axisLine={false} 
+                tick={{ fontSize: 12, fill: '#94a3b8' }}
+                dy={10}
+                minTickGap={30}
+              />
               <YAxis
                 tickLine={false}
                 axisLine={false}
+                tick={{ fontSize: 12, fill: '#94a3b8' }}
                 tickFormatter={(value) => (metric === 'cost' ? `$${value}` : formatNum(Number(value)))}
               />
-              <Tooltip formatter={(value) => (metric === 'cost' ? formatCurrency(Number(value)) : formatNum(Number(value)))} />
+              <Tooltip 
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                formatter={(value) => (metric === 'cost' ? formatCurrency(Number(value)) : formatNum(Number(value)))} 
+              />
               {activeServices.map((id) => (
                 <Line
                   key={id}

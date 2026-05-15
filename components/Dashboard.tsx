@@ -161,7 +161,7 @@ function Overview({ data }: { data: AllUsageResponse }) {
         <CostChart data={data} />
         <DailyChart data={data} />
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {services.map((usage) => (
           <ServiceCard key={usage.service} usage={usage} />
         ))}

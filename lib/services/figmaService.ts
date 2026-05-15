@@ -173,16 +173,36 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
     }
 
     const projects = parsed.data.projects;
+    if (projects.length === 0) {
+      return emptyUsage('figma', 'UNKNOWN', '팀 내에 조회 가능한 프로젝트가 없습니다. Team ID가 정확한지, 혹은 프로젝트가 모두 비공개인지 확인하세요.');
+    }
+
     const metas = await Promise.all(projects.map((project) => fetchProjectMeta(accessToken, project.id)));
     const projectDetails = buildProjectDetails(projects, metas);
     const files = await fetchProjectFiles(accessToken, projects);
+
+    if (files.length === 0) {
+      return {
+        ...emptyUsage('figma', 'UNKNOWN', '프로젝트 내에 파일이 없습니다. Figma의 [Drafts]에 있는 파일은 API로 조회되지 않으니 팀 프로젝트로 이동시켜주세요.'),
+        connected: true,
+        figma: {
+          accountLabel,
+          projectCount: projects.length,
+          fileCount: 0,
+          snapshotDate: today,
+          projects: projectDetails,
+          files: [],
+        }
+      };
+    }
+
     const metaFileCount = metas.reduce((sum, meta) => sum + (meta?.file_count ?? 0), 0);
     const fileCount = metaFileCount || files.length;
 
     const today = dateKey();
     const projectsCreatedToday = metas.filter((meta) => isSameDayKST(meta?.created_at, today)).length;
     const filesUpdatedToday = files.filter((file) => isSameDayKST(file.lastModified, today)).length;
-    
+
     // Simulate daily history from file modifications (using KST)
     const dailyMap = new Map<string, DailyUsage>();
     for (const file of files) {
@@ -191,7 +211,7 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
       const date = new Date(file.lastModified);
       const kstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
       const kstDateStr = kstDate.toISOString().slice(0, 10);
-      
+
       const current = dailyMap.get(kstDateStr) ?? { date: kstDateStr, inputTokens: 0, outputTokens: 0, requests: 0, cost: 0 };
       current.requests += 1;
       current.outputTokens += 1;
@@ -217,7 +237,7 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
       service: 'figma',
       connected: true,
       error: 'PLAN_REQUIRED',
-      errorMessage: 'activity_logs는 Enterprise 플랜과 OAuth token이 필요합니다. 파일 수정 이력으로 추이를 대체 표시 중입니다.',
+      errorMessage: 'Plan을 업그레이드 하면 더 자세한 정보가 출력됩니다. Drafts가 아닌 프로젝트 폴더에 있는 파일들만 집계됩니다.',
       cost: { today: 0, thisMonth: 0 },
       tokens: { input: 0, output: 0, total: fileCount },
       requests: fileCount,
@@ -351,37 +371,55 @@ async function fetchProjectFiles(
   projects: z.infer<typeof ProjectsSchema>['projects']
 ): Promise<FigmaFile[]> {
   const allFiles: FigmaFile[] = [];
-  
-  // 모든 프로젝트를 돌며 파일 목록 수집
-  await Promise.all(projects.map(async (project) => {
-    try {
-      const response = await fetch(`https://api.figma.com/v1/projects/${project.id}/files`, {
-        headers: { 'X-Figma-Token': accessToken },
-        cache: 'no-store',
-      });
-      if (!response.ok) return;
-      
-      const data = await response.json();
-      const filesParsed = FilesSchema.safeParse(data);
-      if (!filesParsed.success) return;
 
-      for (const file of filesParsed.data.files) {
-        allFiles.push({
-          key: file.key,
-          name: file.name ?? file.key,
-          projectId: project.id,
-          projectName: project.name ?? project.id,
-          thumbnailUrl: file.thumbnail_url,
-          lastModified: file.last_modified,
-          branchName: file.branch_name,
+  // 429 에러 방지를 위해 순차적으로 처리 (약간의 지연 추가)
+  for (const project of projects) {
+    let retries = 2;
+    while (retries > 0) {
+      try {
+        const response = await fetch(`https://api.figma.com/v1/projects/${project.id}/files`, {
+          headers: { 'X-Figma-Token': accessToken },
+          cache: 'no-store',
         });
-      }
-    } catch (e) {
-      console.error(`[Figma] Failed to fetch files for project ${project.id}:`, e);
-    }
-  }));
 
-  // 중복 제거 (여러 프로젝트에 걸쳐 있을 수 있음) 및 수정일 기준 내림차순 정렬
+        if (response.status === 429) {
+          console.warn(`[Figma] Rate limit hit for project ${project.id}, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2초 대기
+          retries--;
+          continue;
+        }
+
+        if (!response.ok) {
+          console.error(`[Figma] Failed to fetch files for project ${project.id}: ${response.status}`);
+          break;
+        }
+
+        const data = await response.json();
+        const filesParsed = FilesSchema.safeParse(data);
+        if (!filesParsed.success) break;
+
+        for (const file of filesParsed.data.files) {
+          allFiles.push({
+            key: file.key,
+            name: file.name ?? file.key,
+            projectId: project.id,
+            projectName: project.name ?? project.id,
+            thumbnailUrl: file.thumbnail_url,
+            lastModified: file.last_modified,
+            branchName: file.branch_name,
+          });
+        }
+        break; // 성공 시 루프 탈출
+      } catch (e) {
+        console.error(`[Figma] Error fetching project ${project.id}:`, e);
+        break;
+      }
+    }
+    // 프로젝트 간 간격 추가 (API 부하 방지)
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  // 중복 제거 및 수정일 기준 내림차순 정렬
   const uniqueFiles = Array.from(new Map(allFiles.map(f => [f.key, f])).values());
   return uniqueFiles.sort((a, b) => {
     const dateA = a.lastModified ? new Date(a.lastModified).getTime() : 0;
