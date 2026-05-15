@@ -8,7 +8,8 @@
     "dev": "plasmo dev",
     "dev:detached": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-dev-detached.ps1",
     "dev:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-dev-detached.ps1",
-    "build": "plasmo build",
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-production.ps1",
+    "build:plasmo": "plasmo build",
     "package": "plasmo package"
   },
   "dependencies": {
