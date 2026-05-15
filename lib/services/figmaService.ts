@@ -180,8 +180,25 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
     const fileCount = metaFileCount || files.length;
 
     const today = dateKey();
-    const projectsCreatedToday = metas.filter((meta) => meta?.created_at && dateKey(new Date(meta.created_at)) === today).length;
-    const filesUpdatedToday = files.filter((file) => file.lastModified && dateKey(new Date(file.lastModified)) === today).length;
+    const projectsCreatedToday = metas.filter((meta) => isSameDayKST(meta?.created_at, today)).length;
+    const filesUpdatedToday = files.filter((file) => isSameDayKST(file.lastModified, today)).length;
+    
+    // Simulate daily history from file modifications (using KST)
+    const dailyMap = new Map<string, DailyUsage>();
+    for (const file of files) {
+      if (!file.lastModified) continue;
+      // Get KST date string for each file
+      const date = new Date(file.lastModified);
+      const kstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+      const kstDateStr = kstDate.toISOString().slice(0, 10);
+      
+      const current = dailyMap.get(kstDateStr) ?? { date: kstDateStr, inputTokens: 0, outputTokens: 0, requests: 0, cost: 0 };
+      current.requests += 1;
+      current.outputTokens += 1;
+      dailyMap.set(kstDateStr, current);
+    }
+    const dailyHistory = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+
     const snapshot = await updateProjectSnapshot(accountLabel, today, projects.map((project) => project.id));
     const figma: FigmaUsage = {
       accountLabel,
@@ -200,7 +217,7 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
       service: 'figma',
       connected: true,
       error: 'PLAN_REQUIRED',
-      errorMessage: 'activity_logs는 Enterprise 플랜과 OAuth token이 필요합니다. 파일 수로 대체 표시 중입니다.',
+      errorMessage: 'activity_logs는 Enterprise 플랜과 OAuth token이 필요합니다. 파일 수정 이력으로 추이를 대체 표시 중입니다.',
       cost: { today: 0, thisMonth: 0 },
       tokens: { input: 0, output: 0, total: fileCount },
       requests: fileCount,
@@ -228,7 +245,7 @@ async function fetchProjectFallback(accessToken: string, teamId: string, account
           requests: fileCount,
         },
       ],
-      dailyHistory: [],
+      dailyHistory,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -266,8 +283,8 @@ async function fetchProjectInsights(accessToken: string, teamId: string, account
   const fileCount = metaFileCount || files.length;
 
   const today = dateKey();
-  const projectsCreatedToday = metas.filter((meta) => meta?.created_at && dateKey(new Date(meta.created_at)) === today).length;
-  const filesUpdatedToday = files.filter((file) => file.lastModified && dateKey(new Date(file.lastModified)) === today).length;
+  const projectsCreatedToday = metas.filter((meta) => isSameDayKST(meta?.created_at, today)).length;
+  const filesUpdatedToday = files.filter((file) => isSameDayKST(file.lastModified, today)).length;
   const snapshot = await updateProjectSnapshot(accountLabel, today, projects.map((project) => project.id));
   const figma: FigmaUsage = {
     accountLabel,
@@ -333,39 +350,63 @@ async function fetchProjectFiles(
   accessToken: string,
   projects: z.infer<typeof ProjectsSchema>['projects']
 ): Promise<FigmaFile[]> {
-  const files: FigmaFile[] = [];
-  for (const project of projects) {
-    const filesResponse = await fetch(`https://api.figma.com/v1/projects/${project.id}/files`, {
-      headers: { 'X-Figma-Token': accessToken },
-      cache: 'no-store',
-    });
-    if (!filesResponse.ok) continue;
-    const filesParsed = FilesSchema.safeParse(await filesResponse.json());
-    if (!filesParsed.success) continue;
-
-    for (const file of filesParsed.data.files) {
-      files.push({
-        key: file.key,
-        name: file.name ?? file.key,
-        projectId: project.id,
-        projectName: project.name ?? project.id,
-        thumbnailUrl: file.thumbnail_url,
-        lastModified: file.last_modified,
-        branchName: file.branch_name,
+  const allFiles: FigmaFile[] = [];
+  
+  // 모든 프로젝트를 돌며 파일 목록 수집
+  await Promise.all(projects.map(async (project) => {
+    try {
+      const response = await fetch(`https://api.figma.com/v1/projects/${project.id}/files`, {
+        headers: { 'X-Figma-Token': accessToken },
+        cache: 'no-store',
       });
-    }
-  }
+      if (!response.ok) return;
+      
+      const data = await response.json();
+      const filesParsed = FilesSchema.safeParse(data);
+      if (!filesParsed.success) return;
 
-  return files.sort((a, b) => (b.lastModified ?? '').localeCompare(a.lastModified ?? ''));
+      for (const file of filesParsed.data.files) {
+        allFiles.push({
+          key: file.key,
+          name: file.name ?? file.key,
+          projectId: project.id,
+          projectName: project.name ?? project.id,
+          thumbnailUrl: file.thumbnail_url,
+          lastModified: file.last_modified,
+          branchName: file.branch_name,
+        });
+      }
+    } catch (e) {
+      console.error(`[Figma] Failed to fetch files for project ${project.id}:`, e);
+    }
+  }));
+
+  // 중복 제거 (여러 프로젝트에 걸쳐 있을 수 있음) 및 수정일 기준 내림차순 정렬
+  const uniqueFiles = Array.from(new Map(allFiles.map(f => [f.key, f])).values());
+  return uniqueFiles.sort((a, b) => {
+    const dateA = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+    const dateB = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+    return dateB - dateA;
+  });
 }
 
 function dateKey(date = new Date()) {
   if (isNaN(date.getTime())) return '0000-00-00';
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  // 한국 시간(KST, UTC+9) 기준으로 날짜 문자열 생성
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kstDate = new Date(date.getTime() + kstOffset);
+  return kstDate.toISOString().slice(0, 10);
+}
+
+function isSameDayKST(isoString: string | undefined, todayStr: string) {
+  if (!isoString) return false;
   try {
-    return local.toISOString().slice(0, 10);
+    const date = new Date(isoString);
+    const kstOffset = 9 * 60 * 60 * 1000;
+    const kstDate = new Date(date.getTime() + kstOffset);
+    return kstDate.toISOString().slice(0, 10) === todayStr;
   } catch (e) {
-    return '0000-00-00';
+    return false;
   }
 }
 

@@ -398,44 +398,57 @@ function CursorAccounts({
 }
 
 function FigmaFiles({ figma }: { figma: FigmaUsage }) {
-  const today = dateInputValue(new Date());
-  const createdToday = figma.projectsCreatedToday ?? figma.projects.filter((project) => project.createdAt?.startsWith(today)).length;
-  const updatedToday = figma.filesUpdatedToday ?? figma.files.filter((file) => file.lastModified?.startsWith(today)).length;
+  const today = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kstTodayStr = new Date(today.getTime() + kstOffset).toISOString().slice(0, 10);
+  
+  const createdToday = figma.projectsCreatedToday ?? figma.projects.filter((project) => {
+    if (!project.createdAt) return false;
+    const d = new Date(project.createdAt);
+    return new Date(d.getTime() + kstOffset).toISOString().slice(0, 10) === kstTodayStr;
+  }).length;
+  
+  const updatedToday = figma.filesUpdatedToday ?? figma.files.filter((file) => {
+    if (!file.lastModified) return false;
+    const d = new Date(file.lastModified);
+    return new Date(d.getTime() + kstOffset).toISOString().slice(0, 10) === kstTodayStr;
+  }).length;
+  
   const recentlyUpdated = figma.files[0];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-4">
         <Metric label="총 프로젝트" value={formatNum(figma.projectCount)} />
         <Metric label="총 파일" value={formatNum(figma.fileCount)} />
-        <Metric label="API 기준 오늘 생성 프로젝트" value={formatNum(createdToday)} />
-        <Metric label="접근 가능한 파일 중 오늘 수정" value={formatNum(updatedToday)} />
+        <Metric label="오늘 생성 프로젝트" value={formatNum(createdToday)} />
+        <Metric label="오늘 수정된 파일" value={formatNum(updatedToday)} />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
           <div>
-            <h2 className="text-sm font-semibold text-slate-950">Figma Files Dashboard</h2>
-            <p className="mt-1 text-xs text-slate-500">최근 수정 파일: {recentlyUpdated?.name ?? '-'}</p>
+            <h2 className="text-base font-bold text-slate-900">Figma 최근 작업 파일</h2>
+            <p className="mt-1 text-sm text-slate-500">최근 수정: {recentlyUpdated?.name ?? '-'}</p>
           </div>
-          <span className="text-xs font-medium text-slate-500">수정일 최신순</span>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sort by Modified</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50/50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">파일</th>
-                <th className="px-4 py-3">프로젝트</th>
-                <th className="px-4 py-3">마지막 수정일</th>
-                <th className="px-4 py-3">상태</th>
+                <th className="px-6 py-4 font-bold">파일 정보</th>
+                <th className="px-6 py-4 font-bold">소속 프로젝트</th>
+                <th className="px-6 py-4 font-bold text-right">마지막 수정</th>
+                <th className="px-6 py-4 text-center font-bold">상태</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {figma.files.length ? (
-                figma.files.map((file) => <FigmaFileRow key={file.key} file={file} today={today} />)
+                figma.files.map((file) => <FigmaFileRow key={file.key} file={file} todayStr={kstTodayStr} />)
               ) : (
                 <tr>
-                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={4}>
+                  <td className="px-6 py-10 text-center text-sm text-slate-500" colSpan={4}>
                     표시할 파일 데이터가 없습니다
                   </td>
                 </tr>
@@ -448,34 +461,41 @@ function FigmaFiles({ figma }: { figma: FigmaUsage }) {
   );
 }
 
-function FigmaFileRow({ file, today }: { file: FigmaFile; today: string }) {
-  const isUpdatedToday = file.lastModified?.startsWith(today);
+function FigmaFileRow({ file, todayStr }: { file: FigmaFile; todayStr: string }) {
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const isUpdatedToday = file.lastModified && (new Date(new Date(file.lastModified).getTime() + kstOffset).toISOString().slice(0, 10) === todayStr);
 
   return (
-    <tr className="hover:bg-slate-50">
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-3">
+    <tr className="group hover:bg-slate-50 transition-colors">
+      <td className="px-6 py-4">
+        <div className="flex items-center gap-4">
           {file.thumbnailUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={file.thumbnailUrl} alt="" className="h-9 w-12 rounded border border-slate-200 object-cover" />
+            <img src={file.thumbnailUrl} alt="" className="h-10 w-14 rounded-lg border border-slate-200 object-cover shadow-sm group-hover:border-slate-300" />
           ) : (
-            <div className="flex h-9 w-12 items-center justify-center rounded border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-400">
-              FG
+            <div className="flex h-10 w-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-xs font-black text-slate-300 uppercase tracking-tighter">
+              FIG
             </div>
           )}
-          <div>
-            <div className="font-medium text-slate-900">{file.name}</div>
-            <div className="text-xs text-slate-400">{file.key}</div>
+          <div className="min-w-0">
+            <div className="font-bold text-slate-900 truncate max-w-[200px]" title={file.name}>{file.name}</div>
+            <div className="text-xs text-slate-400 font-medium">#{file.key.slice(0, 8)}</div>
           </div>
         </div>
       </td>
-      <td className="px-4 py-3 text-slate-700">
-        <div>{file.projectName}</div>
-        {file.branchName ? <div className="text-xs text-slate-400">{file.branchName}</div> : null}
+      <td className="px-6 py-4">
+        <div className="text-sm font-semibold text-slate-700 truncate max-w-[150px]" title={file.projectName}>{file.projectName}</div>
+        {file.branchName ? <div className="text-xs text-slate-400 font-medium italic">branch: {file.branchName}</div> : null}
       </td>
-      <td className="px-4 py-3 text-slate-700">{formatIsoDate(file.lastModified)}</td>
-      <td className="px-4 py-3">
-        {isUpdatedToday ? <StatusBadge tone="blue">오늘 수정</StatusBadge> : <StatusBadge tone="slate">변동 없음</StatusBadge>}
+      <td className="px-6 py-4 text-right text-sm font-medium text-slate-600">
+        {formatIsoDate(file.lastModified)}
+      </td>
+      <td className="px-6 py-4 text-center">
+        {isUpdatedToday ? (
+          <StatusBadge tone="blue">오늘 수정</StatusBadge>
+        ) : (
+          <StatusBadge tone="slate">변동 없음</StatusBadge>
+        )}
       </td>
     </tr>
   );

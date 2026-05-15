@@ -33,17 +33,22 @@ function parseUsageRange(request: Request): UsageRange {
   };
 }
 
-async function getServiceUsage(service: ServiceId, usageRange: UsageRange): Promise<ServiceUsage> {
+async function getServiceUsage(service: ServiceId, usageRange: UsageRange, bypassCache = false): Promise<ServiceUsage> {
   const cacheKey =
     service === 'cursor' || service === 'figma' || service === 'chatgpt'
       ? `${service}:${usageRange.startDate ?? 'default'}:${usageRange.endDate ?? 'default'}`
       : service;
-  const cached = getCache<ServiceUsage>(cacheKey);
-  if (cached) return cached;
+  
+  if (!bypassCache) {
+    const cached = getCache<ServiceUsage>(cacheKey);
+    if (cached) return cached;
+  }
 
   try {
     const data = service === 'cursor' ? await fetchCursorUsage(usageRange) : await fetchers[service](usageRange);
-    setCache(cacheKey, data);
+    // Figma는 더 자주 업데이트되도록 TTL을 60초로 설정, 나머지는 300초(5분)
+    const ttl = service === 'figma' ? 60 : 300;
+    setCache(cacheKey, data, ttl);
     return data;
   } catch (error) {
     console.error(`[API:Usage] Failed to fetch ${service}:`, error);
@@ -52,13 +57,16 @@ async function getServiceUsage(service: ServiceId, usageRange: UsageRange): Prom
 }
 
 export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const bypassCache = url.searchParams.get('refresh') === 'true';
   const usageRange = parseUsageRange(request);
+  
   const [openai, gemini, cursor, figma, chatgpt] = await Promise.all([
-    getServiceUsage('openai', usageRange),
-    getServiceUsage('gemini', usageRange),
-    getServiceUsage('cursor', usageRange),
-    getServiceUsage('figma', usageRange),
-    getServiceUsage('chatgpt', usageRange),
+    getServiceUsage('openai', usageRange, bypassCache),
+    getServiceUsage('gemini', usageRange, bypassCache),
+    getServiceUsage('cursor', usageRange, bypassCache),
+    getServiceUsage('figma', usageRange, bypassCache),
+    getServiceUsage('chatgpt', usageRange, bypassCache),
   ]);
 
   const data: AllUsageResponse = {

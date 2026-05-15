@@ -25,12 +25,16 @@ export function useUsageData(options: UsageDataOptions = {}) {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const loadingRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isManualRefresh = false) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setError(null);
     try {
-      const response = await fetch(usageAllPath({ cursorStart, cursorEnd }), { cache: 'no-store' });
+      const path = usageAllPath({ cursorStart, cursorEnd });
+      const separator = path.includes('?') ? '&' : '?';
+      const refreshParam = isManualRefresh ? `${separator}refresh=true` : '';
+      
+      const response = await fetch(`${path}${refreshParam}`, { cache: 'no-store' });
       if (!response.ok) throw new Error(`Request failed: ${response.status}`);
       const json = (await response.json()) as AllUsageResponse;
       setData(json);
@@ -45,31 +49,10 @@ export function useUsageData(options: UsageDataOptions = {}) {
 
   const refresh = useCallback(async () => {
     if (loadingRef.current || refreshing) return;
-    loadingRef.current = true;
     setRefreshing(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cursorStart,
-          cursorEnd,
-        }),
-        cache: 'no-store',
-      });
-      if (!response.ok) throw new Error(`Refresh failed: ${response.status}`);
-      const json = (await response.json()) as AllUsageResponse;
-      setData(json);
-      setLastUpdated(new Date(json.fetchedAt));
-    } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh usage data');
-    } finally {
-      setRefreshing(false);
-      loadingRef.current = false;
-      setLoading(false);
-    }
-  }, [cursorEnd, cursorStart, refreshing]);
+    await load(true);
+    setRefreshing(false);
+  }, [load, refreshing]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => {
