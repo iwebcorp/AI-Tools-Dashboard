@@ -1,145 +1,179 @@
-# AI Usage Dashboard
+# AI Usage Dashboard (Portfolio Case Study)
 
-AI Usage Dashboard is a case-study project for monitoring usage and cost across multiple AI tools in one place. It aggregates data from OpenAI, Gemini, Cursor, ChatGPT Web, and Figma, then presents the results through a single dashboard with charts, service cards, and drill-down views.
+[![Project Status](https://img.shields.io/badge/Status-Sanitized_Case_Study-blue.svg)](https://github.com/DUChae/ai-usage-dashboard-case-study)
+[![Tech Stack](https://img.shields.io/badge/Stack-Next.js_16_%7C_React_19_%7C_Redis-black.svg)]()
 
-This repository has been sanitized for personal portfolio use. Internal company identifiers, private endpoints, and secrets are excluded.
+> **"여러 흩어진 AI 서비스의 사용량과 비용을 한 곳에서 확인하고 관리할 수 없을까?"**
 
-## Overview
+본 프로젝트는 OpenAI, Gemini, Cursor, ChatGPT Web, Figma 등 파편화된 AI 도구들의 실시간 사용량과 비용 데이터를 Upstash Redis 기반으로 통합하여 대시보드화한 솔루션입니다. 브라우저 세션 캡처 기술(Chrome Extension)과 데이터 정규화 파이프라인을 통해 기업 및 개인의 AI 비용 최적화를 지원합니다.
 
-- Track usage and cost across multiple AI providers
-- Centralize session and usage data through a Redis-backed flow
-- Sync browser-captured session state with the server via a Chrome Extension
-- Visualize token consumption, request volume, daily trends, and service-level details
+---
 
-## Architecture
+## 1. 프로젝트 개요
 
-```text
-Chrome Extension
-  -> POST /api/session-sync
-  -> Next.js API
-  -> Upstash Redis
-  -> Provider service fetchers
-  -> Dashboard UI
+- **서비스 성격**: AI 서비스 사용량 통합 모니터링 및 비용 관리 대시보드
+- **주요 가치**:
+  - 실시간 세션 동기화를 통한 정확한 사용량 트래킹
+  - 복잡한 API Payload 정규화를 통한 통합 지표 제공
+  - 서비스별(Cursor, ChatGPT 등) 특화 데이터 시각화
+- **핵심 기술**: Next.js 16, Upstash Redis, Chrome Extension (Plasmo), Recharts
+
+---
+
+## 2. 시스템 아키텍처 및 데이터 흐름
+
+### 🔄 전체 시스템 구조
+
+```mermaid
+flowchart LR
+  A[Chrome Extension] --> B[POST /api/session-sync]
+  B --> C[Next.js API Route]
+  C --> D[Validate payload]
+  D --> E[Upstash Redis]
+  E --> F[Usage fetchers]
+  F --> G[Dashboard UI]
 ```
 
-Key ideas:
+### 🛠️ 데이터 정규화 과정 (Normalization)
 
-1. The extension captures session state from supported web apps.
-2. The server stores and resolves session data using Redis-first lookup.
-3. Usage fetchers normalize provider-specific responses into a shared contract.
-4. The dashboard renders aggregate and per-service views from the same model.
+서로 다른 서비스의 데이터를 하나의 공통 규격으로 통합합니다.
 
-## Key Features
-
-- Unified usage dashboard for OpenAI, Gemini, Cursor, ChatGPT, and Figma
-- Cost, token, and request metrics at both aggregate and service level
-- Date-range filtering for daily and monthly usage views
-- Redis-backed session sync and lookup flow
-- Chrome Extension support for session capture and server sync
-- Figma project/file breakdown with recent activity visibility
-
-## Tech Stack
-
-- Next.js 16
-- React 19
-- TypeScript
-- Tailwind CSS
-- Recharts
-- Zod
-- Upstash Redis
-- Vercel
-- Chrome Extension
-- Plasmo
-
-## Project Structure
-
-```text
-app/
-  api/
-    session-sync/
-    usage/
-    proxy/gemini/
-components/
-lib/
-  services/
-  redis.ts
-  session-store.ts
-extension/
-  ai-auto/
+```mermaid
+flowchart LR
+  A[Provider payloads] --> B[Service adapter]
+  B --> C[Normalize fields]
+  C --> D[Shared response contract]
+  D --> E[Aggregate view]
+  D --> F[Service detail view]
 ```
 
-## Main Implementation Points
+### 🎨 대시보드 렌더링 흐름
 
-### Session Sync Pipeline
+```mermaid
+flowchart LR
+  A[API response] --> B[Shared types]
+  B --> C[Charts]
+  B --> D[Service cards]
+  B --> E[Detail tabs]
+  C --> F[Dashboard UI]
+  D --> F
+  E --> F
+```
 
-The `app/api/session-sync/route.ts` endpoint receives extension payloads and stores session data in Redis after validation.
+### 🚀 배포 및 인프라 구조
 
-### Redis-First Session Resolution
+```mermaid
+flowchart LR
+  A[Developer machine] --> B[Vercel deployment]
+  B --> C[Next.js app]
+  B --> D[Extension bundle]
+  C --> E[Upstash Redis]
+  D --> E
+```
 
-The usage fetchers resolve session state from Redis before falling back to environment-based configuration.
+### 📊 데이터 모델 구성
 
-### Chrome Extension for Session Capture
+```mermaid
+flowchart LR
+  A[Service usage] --> B[Tokens]
+  A --> C[Requests]
+  A --> D[Cost]
+  A --> E[Daily history]
+  A --> F[Account breakdown]
+  A --> G[Figma projects/files]
+```
 
-The `extension/ai-auto` package handles browser-side session capture and syncs it to the server through a background script and content script flow.
+---
 
-### Usage Normalization
+## 3. 주요 기능 및 스크린샷
 
-Provider-specific usage responses are normalized into a shared response contract so the dashboard can render a consistent experience across services.
+### 🔌 실시간 세션 동기화 (Chrome Extension)
 
-## Challenges
+브라우저 확장 프로그램을 통해 각 AI 서비스의 세션 정보를 안전하게 캡처하고 서버로 전송합니다. 복잡한 인증 과정을 자동화하여 데이터의 연속성을 보장합니다.
 
-- Different providers expose different response shapes and error behavior
-- Session state is split across browser, service, and server contexts
-- The dashboard needs to remain usable when one provider fails
-- Chrome Extension development and production bundles behave differently
+![Chrome Extension](https://github.com/DUChae/ai-usage-dashboard-case-study/raw/main/public/img/extension.png)
+_세션 상태를 캡처하여 서버와 동기화하는 확장 프로그램 팝업_
 
-## What I Focused On
+### 📊 통합 사용량 대시보드 (Main Dashboard)
 
-- End-to-end data flow from browser capture to dashboard rendering
-- Shared data modeling across multiple AI providers
-- Redis-backed session management and resolution
-- Service-level error isolation and graceful fallback behavior
-- UI surfaces for aggregate and service-specific analysis
+여러 서비스의 총 비용, 토큰 사용량, 요청 횟수 등을 통합하여 실시간 트렌드 그래프로 시각화합니다.
 
-## Local Setup
+![Main dashboard](https://github.com/DUChae/ai-usage-dashboard-case-study/raw/main/public/img/main-dashboard.png)
+_서비스 전반의 사용량, 비용 및 트렌드를 보여주는 메인 대시보드_
+
+### 🔍 서비스별 상세 분석 (Deep Dive)
+
+Cursor, ChatGPT, Figma 등 각 서비스의 특성에 맞는 상세 지표를 제공합니다. (예: Figma의 프로젝트/파일별 사용량, Cursor의 계정별 요청량 등)
+
+|                                              Cursor 상세 뷰                                              |                                              ChatGPT 상세 뷰                                               |
+| :------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------------: |
+| ![Cursor detail](https://github.com/DUChae/ai-usage-dashboard-case-study/raw/main/public/img/cursor.png) | ![ChatGPT detail](https://github.com/DUChae/ai-usage-dashboard-case-study/raw/main/public/img/chatgpt.png) |
+
+---
+
+## 4. 기술 스택 (Tech Stack)
+
+### Frontend & Core
+
+- **Framework**: Next.js 16.2.6 (App Router), React 19
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS 4
+- **Visualization**: Recharts (Customizable Charting Library)
+
+### Backend & Storage
+
+- **API**: Next.js API Routes (Route Handlers)
+- **Database**: Upstash Redis (High-speed caching and session store)
+- **Validation**: Zod (Schema-first validation)
+
+### Browser Extension
+
+- **Framework**: Plasmo (Browser extension development framework)
+- **State Mgmt**: React 18 & Chrome Storage API
+
+---
+
+## 5. 핵심 기여 및 문제 해결
+
+### 🛠️ 데이터 정규화 파이프라인 설계
+
+서로 다른 구조의 Provider API 응답(Input/Output Tokens, Request Counts, Cost Units)을 공통 인터페이스(`UsageResponse`)로 정규화하는 데이터 처리 계층을 구축하였습니다.
+
+### ⚡ Redis-First 조회 전략
+
+외부 API 호출의 지연 시간을 최소화하기 위해 Redis 캐시를 우선 조회하고, 세션 만료 시에만 브라우저 세션을 통해 갱신하는 최적화 전략을 구현하였습니다.
+
+### 🛡️ 보안 및 개인정보 보호
+
+민감한 세션 정보를 최소한으로 다루기 위해 Chrome Extension의 `host_permissions`를 엄격히 제한하고, 서버 측에서는 유효성 검증을 거친 데이터만 Redis에 저장하도록 설계하였습니다.
+
+---
+
+## 6. 시작하기 (Local Setup)
+
+### 대시보드 실행
 
 ```bash
-corepack pnpm install
+# 의존성 설치
+pnpm install
+
+# 환경 변수 설정
 cp .env.example .env.local
-corepack pnpm dev
+
+# 개발 서버 실행
+pnpm dev
 ```
 
-Required environment variables:
-
-```env
-KV_REST_API_URL=
-KV_REST_API_TOKEN=
-SYNC_SECRET=
-OPENAI_ADMIN_KEY=
-GOOGLE_PROJECT_ID=
-```
-
-### Chrome Extension Build
+### 확장 프로그램 빌드
 
 ```bash
 cd extension/ai-auto
 npm run build
 ```
 
-Production bundle output:
+---
 
-```text
-extension/ai-auto/build/chrome-mv3-prod
-```
+## 7. 관련 링크
 
-## Why This Project Matters
-
-This project shows full-stack ownership across UI, API, data modeling, caching, browser automation, and operational visibility. It is a useful example for roles that expect a developer to build and maintain an end-to-end internal tool, not just a front-end page or isolated backend endpoint.
-
-## Notes for Portfolio Use
-
-- Replace private URLs with public demo links if available
-- Remove company names, internal hostnames, and secrets before publishing
-- Include screenshots only for screens that do not expose sensitive data
-- If you publish a public repository, keep only sanitized code and documentation
-
+- **Case Study Repo**: [DUChae/ai-usage-dashboard-case-study](https://github.com/DUChae/ai-usage-dashboard-case-study)
+- **Contact**: [GitHub Profile](https://github.com/DUChae)
